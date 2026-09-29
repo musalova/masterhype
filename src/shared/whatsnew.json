@@ -36,5 +36,13 @@
     "Le playlist che modifichi senza PC non si perdono più se nel frattempo sono state eliminate",
     "Se lo streaming fa fatica la app te lo dice, invece di restare ferma in silenzio",
     "I download sul telefono verificano che il file sia arrivato intero"
+  ],
+  "0.5.5": [
+    "Gli aggiornamenti del telefono accettano solo app firmate con la stessa chiave: un PC falso sulla rete non può più proporre update ingannevoli",
+    "Le impostazioni lette dal telefono non rivelano più codici e password del PC",
+    "Nuova opzione per tenere il PC sveglio mentre il server è attivo: il telefono resta connesso anche se il PC va in standby",
+    "I download sul telefono sono più protetti contro la pulizia automatica della memoria",
+    "I suggerimenti musicali sul telefono ora ragionano esattamente come quelli del PC",
+    "Correzioni di stabilità e telemetria più precisa sullo streaming"
   ]
 }
