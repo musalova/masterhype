@@ -70,7 +70,16 @@
   golden in `tests/taste-parity.test.ts` bloccano derive su entrambi i lati.
   `localData.trackBaseKey`/`engine.normArtist`/`ytparse.normTxt` sono alias di
   compatibilità verso il condiviso.
-- `src/main/` — processo main Electron: `db.ts` (node:sqlite), `settings.ts`, `ipc.ts`, `services/`
+- `src/main/` — processo main Electron: `db.ts` (node:sqlite — schema fresco nel
+  blocco CREATE; **migrazioni ordinate via `PRAGMA user_version`**: un passo
+  pubblicato in `MIGRATIONS` non si modifica mai, i fix sono passi nuovi in
+  coda; ogni passo idempotente+transazionale. Manutenzione a ogni boot:
+  `wal_checkpoint(TRUNCATE)` sempre, pruning 1×/giorno (marcatore
+  `prefs 'sys:last-prune'`): `events` tipo play/partial/complete >18 mesi potati
+  — TRANNE i play di brani con skip/hide storici (negativeTracks confronta
+  skip vs play su tutta la storia); segnali espliciti (like/skip/hide/download/
+  burn/unlike) mai potati = memoria gusti; `artist_cooc`/`usage` potati a 18 mesi
+  dallo ts; VACUUM solo se il pruning ha cancellato righe), `settings.ts`, `ipc.ts`, `services/`
 - `src/main/services/` — `ytmusic.ts` (youtubei.js), `downloader.ts` (yt-dlp+ffmpeg), `library.ts`,
   `sources.ts` (Deezer/Last.fm/Spotify), `recommend.ts` (scoring+assistente), `trends.ts`, `burner.ts`
 - `src/preload/index.ts` — contextBridge `window.masterhype`
