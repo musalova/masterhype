@@ -162,7 +162,11 @@ export async function checkUpdate(manual = false): Promise<void> {
     }
     // Update obbligatorio (minSupportedCode > installato): niente dismiss —
     // la card resta finché l'utente non aggiorna (sicurezza/compatibilità).
-    const required = Number.isFinite(man.minSupportedCode) && (man.minSupportedCode ?? 0) > cur.versionCode;
+    // La forzatura è onorata SOLO da sorgenti autenticate (PC pairato col
+    // token, feed pubblico): un manifest "lan" è arbitrario — un falso PC in
+    // Wi-Fi non deve poter rendere la card non ignorabile.
+    const required = man.source !== 'lan'
+      && Number.isFinite(man.minSupportedCode) && (man.minSupportedCode ?? 0) > cur.versionCode;
     if (!required) {
       // Versione già "ignorata" dall'utente: la riproponiamo solo al check manuale
       const dismissed = Number(localStorage.getItem(DISMISS_KEY) ?? 0);

@@ -519,10 +519,18 @@
   (la UI dichiara "ricerca in difficoltà" invece di un vuoto fasullo).
   Vale per PC (ytmusic.search) e telefono (directSearch).
   `basename()` (anti path-traversal). Il plugin nativo scarica su cacheDir in
-  streaming (non RAM), verifica sha256 e rifiuta file tronchi/vuoti prima di
-  proporre l'install. `dismissUpdate` ricorda il versionCode ignorato
-  (`mh-update-dismissed`); `minSupportedCode` > installato → update OBBLIGATORIO
-  non ignorabile; `installUpdate` ritorna 'ok'|'permission'|'gone' — 'permission'
+  streaming (non RAM), verifica sha256 e rifiuta file tronchi/vuoti.
+  **Pinning della firma** (`signatureMatches` in AppUpdatePlugin): l'APK deve
+  condividere ≥1 certificato con l'app installata via `PackageManager.signingInfo`
+  (GET_SIGNATURES legacy sotto API 33) — confronto su sha256 dei cert, la storia
+  dei cert copre la key rotation. Verificato a download E a install (il file in
+  cache può essere stato sostituito): firma diversa → file eliminato + reject —
+  un falso PC LAN non può mostrare update fasulle né piantare un APK con altra
+  chiave (Android lo rifiuterebbe comunque a install, ma DOPO card e note
+  arbitrarie). `minSupportedCode` → update OBBLIGATORIO è onorato SOLO da
+  sorgenti autenticate ('pc'/'public'), mai da 'lan'. `dismissUpdate` ricorda
+  il versionCode ignorato (`mh-update-dismissed`); `installUpdate` ritorna
+  'ok'|'permission'|'gone' — 'permission'
   arma un retry automatico al ritorno dalla pagina "installa app sconosciute"
   (visibilitychange, max 1 volta), 'gone' torna a 'available' e riscarica.
   Un check a download/ready in corso NON azzera lo stato; un errore NON fa

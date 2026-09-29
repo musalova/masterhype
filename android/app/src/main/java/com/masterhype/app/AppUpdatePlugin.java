@@ -3,6 +3,8 @@ package com.masterhype.app;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.content.pm.SigningInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -31,6 +33,56 @@ import java.security.MessageDigest;
  */
 @CapacitorPlugin(name = "AppUpdate")
 public class AppUpdatePlugin extends Plugin {
+
+    // Certificati di firma di un PackageInfo (installato o da getPackageArchiveInfo):
+    // tutti i firmatari dell'APK, o la STORIA dei cert se firmato con key rotation.
+    private byte[][] certsOf(PackageInfo pi) {
+        try {
+            Signature[] s;
+            if (Build.VERSION.SDK_INT >= 33) {
+                SigningInfo si = pi.signingInfo;
+                if (si == null) return new byte[0][];
+                s = si.hasMultipleSigners() ? si.getApkContentsSigners() : si.getSigningCertificateHistory();
+            } else {
+                @SuppressWarnings("deprecation") Signature[] d = pi.signatures;
+                s = d;
+            }
+            if (s == null) return new byte[0][];
+            byte[][] out = new byte[s.length][];
+            for (int i = 0; i < s.length; i++) out[i] = s[i].toByteArray();
+            return out;
+        } catch (Exception e) { return new byte[0][]; }
+    }
+
+    // L'APK scaricato deve condividere ALMENO un certificato di firma con
+    // l'app installata (rotazione: il nuovo cert mantiene il vecchio in
+    // signingCertificateHistory → l'overlap resta vero). Senza il check le
+    // route /update sono pubbliche: QUALUNQUE PC "MasterHype" in Wi-Fi —
+    // anche una scatola falsa con lo stesso banner UDP — può servire un
+    // manifest + APK che Android rifiuterebbe solo a installazione avviata,
+    // dopo update-card e note fasulle. Qui si taglia prima.
+    private boolean signatureMatches(File apk) {
+        try {
+            PackageManager pm = getContext().getPackageManager();
+            PackageInfo mine, theirs;
+            if (Build.VERSION.SDK_INT >= 33) {
+                PackageManager.PackageInfoFlags f = PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES);
+                mine = pm.getPackageInfo(getContext().getPackageName(), f);
+                theirs = pm.getPackageArchiveInfo(apk.getAbsolutePath(), f);
+            } else {
+                mine = pm.getPackageInfo(getContext().getPackageName(), PackageManager.GET_SIGNATURES);
+                theirs = pm.getPackageArchiveInfo(apk.getAbsolutePath(), PackageManager.GET_SIGNATURES);
+            }
+            if (mine == null || theirs == null) return false;
+            byte[][] a = certsOf(mine), b = certsOf(theirs);
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            for (byte[] x : a) {
+                byte[] hx = md.digest(x);
+                for (byte[] y : b) if (MessageDigest.isEqual(hx, md.digest(y))) return true;
+            }
+            return false;
+        } catch (Exception e) { return false; }
+    }
 
     @PluginMethod
     public void info(PluginCall call) {
@@ -98,6 +150,13 @@ public class AppUpdatePlugin extends Plugin {
                         return;
                     }
                 }
+                // Pinning della firma: solo APK firmati dallo stesso cert
+                // dell'app installata — chiude il vettore "falso PC LAN".
+                if (!signatureMatches(out)) {
+                    out.delete();
+                    call.reject("firma APK diversa dall'app installata — aggiornamento rifiutato");
+                    return;
+                }
                 JSObject r = new JSObject();
                 r.put("path", out.getAbsolutePath());
                 r.put("size", got);
@@ -130,6 +189,9 @@ public class AppUpdatePlugin extends Plugin {
             }
             File f = new File(path);
             if (!f.isFile()) { call.reject("apk non trovato: " + path); return; }
+            // Il file in cache può essere stato sostituito tra download e tap
+            // "Installa": la firma si riverifica qui, non solo a download.
+            if (!signatureMatches(f)) { call.reject("firma APK diversa dall'app installata"); return; }
             Uri uri = FileProvider.getUriForFile(getContext(),
                     getContext().getPackageName() + ".fileprovider", f);
             Intent i = new Intent(Intent.ACTION_VIEW);
