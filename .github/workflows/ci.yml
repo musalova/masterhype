@@ -35,6 +35,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm ci && npm run build
+      - name: Sync Capacitor (genera cordova.variables.gradle e assets)
+        run: npx cap sync android
       - name: Compila il plugin nativo (MediaSession, PlaybackService)
         working-directory: android
         run: ./gradlew.bat :app:compileReleaseJavaWithJavac --no-daemon
