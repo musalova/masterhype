@@ -10,7 +10,7 @@ import { userExists } from './services/users';
 import * as devices from './services/devices';
 import { report } from './services/telemetry';
 import { serveUpdateRoutes } from './update';
-import { sanitizeRemoteSettings, safeUploadName } from './remoteGuards';
+import { sanitizeRemoteSettings, safeUploadName, redactRemoteSettings } from './remoteGuards';
 import { feedUrl } from './services/appUpdate';
 import { openPairingWindow, pairingOpenLeft, tryPair, mintPairCode, PAIR_CODE_TTL_MS } from './pairing';
 import { startDiscovery, stopDiscovery } from './discovery';
@@ -47,6 +47,10 @@ let server: Server | null = null;
 // Eventi main→client remoti (download progress, burn progress…)
 export function remoteBroadcast(channel: string, payload: unknown): void {
   if (!sseClients.size) return;
+  // settings:event porta l'oggetto settings completo: ai remoti va redatto
+  // (remoteToken = credenziale admin + chiavi API). Il renderer locale
+  // riceve la copia piena via webContents.send — qui tocca solo l'SSE.
+  if (channel === IPC.settingsEvent) payload = redactRemoteSettings(payload);
   let line: string;
   try { line = `event: ${channel}\ndata: ${JSON.stringify(payload)}\n\n`; }
   catch { return; } // payload non serializzabile: meglio perdere l'evento che crashare
@@ -276,6 +280,9 @@ const BOOTSTRAP_CHANNELS: ReadonlySet<string> = new Set([IPC.usersList, IPC.user
 const ADMIN_ONLY_CHANNELS: ReadonlySet<string> = new Set([
   IPC.deviceList, IPC.deviceRevoke, IPC.deviceRevokeAll, IPC.deviceSetUser, IPC.deviceRegister,
   IPC.usersRemove, IPC.usersRename, IPC.pairingOpen, IPC.pairingCode,
+  // remoteInfo() restituisce settings.remoteToken (la credenziale admin) —
+  // senza il gate qualunque device token diventava admin con una chiamata.
+  IPC.remoteInfo,
 ]);
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, auth: Auth): Promise<void> {
@@ -405,7 +412,10 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, auth: Auth):
     try {
       // `u` iniettato dal server: gli args del client non possono impersonare
       // un altro profilo — il primo argomento è sempre l'utente autenticato
-      const out = await (fn as (...a: unknown[]) => unknown)(u, ...args);
+      let out = await (fn as (...a: unknown[]) => unknown)(u, ...args);
+      // I segreti non escono mai via API — nemmeno verso un chiamante admin:
+      // il codice condiviso autenticato resta sul PC, niente in localStorage.
+      if (c === IPC.settingsGet) out = redactRemoteSettings(out);
       // Il client riconcilia il profilo salvato col binding reale del token
       // (un device legato a u2 che chiede u3 deve accorgersi che resta u2)
       if (!auth.admin) res.setHeader('X-MH-Bound-User', String(u));

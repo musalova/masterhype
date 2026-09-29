@@ -24,6 +24,10 @@ vi.mock('../src/main/handlers', () => ({
     [IPC.usersCurrent]: (u: number) => u,
     [IPC.libraryRemoteLikes]: (u: number) => [{ videoId: `like-di-u${u}` }],
     [IPC.settingsSet]: (u: number, p: unknown) => p, // eco: verifica sanitize
+    // Segreti finti: verificano che la redazione avvenga in remote.ts, non nel
+    // chiamante (in produzione l'handler restituisce getSettings() completo).
+    [IPC.settingsGet]: () => ({ remoteToken: ADMIN, spotifyClientSecret: 'sec', spotifyRefreshToken: 'rt', lastfmApiKey: 'lfm', audioQuality: '320' }),
+    [IPC.remoteInfo]: () => ({ enabled: true, ip: '192.168.1.10', port: PORT, token: ADMIN, alts: [] }),
     // Admin-only (in produzione delegano a services/devices): qui stubbati
     // sul servizio reale — ciò che conta è il gate ADMIN_ONLY di remote.ts.
     [IPC.deviceList]: () => listDevices(),
@@ -207,5 +211,26 @@ describe('server remoto — auth a due livelli (admin / device token)', () => {
     expect((await call('users:setCurrent', [2])).status).toBe(404);
     const r = await call(IPC.settingsSet, [{ remoteToken: 'HACKED', theme: 'dark' }]);
     expect((r.r as Record<string, unknown>).remoteToken).toBeUndefined(); // sanitize
+  });
+
+  it('i segreti delle settings non escono via API (escalation chiusa)', async () => {
+    // Device token legato a u1: prima leggeva settings:get completo → token admin
+    openPairingWindow(60_000);
+    const { t: devTok } = (await (await pair()).json()) as { t: string };
+    openPairingWindow(0);
+    const s = (await call(IPC.settingsGet, [], devTok, 1)).r as Record<string, unknown>;
+    expect(s.remoteToken).not.toBe(ADMIN);
+    expect(s.remoteToken).toBe('••••••••');
+    expect(s.spotifyClientSecret).toBe('••••••••');
+    expect(s.spotifyRefreshToken).toBe('••••••••');
+    expect(s.lastfmApiKey).toBe('••••••••');
+    expect(s.audioQuality).toBe('320'); // i non-segreti passano
+    // Nemmeno l'admin riceve i segreti via API: il codice non deve
+    // ritrovarsi nel localStorage di un telefono
+    const sa = (await call(IPC.settingsGet, [])).r as Record<string, unknown>;
+    expect(sa.remoteToken).toBe('••••••••');
+    // remote:info espone il token → admin-only (era aperto a ogni device!)
+    expect((await call(IPC.remoteInfo, [], devTok)).status).toBe(403);
+    expect(((await call(IPC.remoteInfo, [])).r as { token: string }).token).toBe(ADMIN);
   });
 });

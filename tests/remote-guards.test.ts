@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeRemoteSettings, safeUploadName } from '../src/main/remoteGuards';
+import { sanitizeRemoteSettings, safeUploadName, redactRemoteSettings, REDACTED } from '../src/main/remoteGuards';
 import { normalizeFeed, feedApkManifest } from '../src/shared/updateFeed';
 
 // Un client col token (telefono, browser sulla LAN) non deve poter cambiare
@@ -18,6 +18,40 @@ describe('impostazioni da remoto', () => {
     expect(sanitizeRemoteSettings(null)).toEqual({});
     expect(sanitizeRemoteSettings(['a'])).toEqual({});
     expect(sanitizeRemoteSettings('x')).toEqual({});
+  });
+  it('il placeholder redatto non sovrascrive il segreto vero', () => {
+    // La UI salva i campi così come li riceve: '••••••••' strippato in
+    // scrittura o il remoteToken vero diventerebbe il placeholder.
+    const out = sanitizeRemoteSettings({
+      spotifyClientSecret: REDACTED, lastfmApiKey: REDACTED,
+      spotifyClientId: 'nuovo-id', country: 'IT',
+    });
+    expect(out).toEqual({ spotifyClientId: 'nuovo-id', country: 'IT' });
+  });
+});
+
+describe('settings:get verso i remoti — redazione segreti', () => {
+  const s = {
+    remoteToken: 'abc123XYZ', spotifyClientSecret: 'sec', spotifyRefreshToken: 'rt',
+    lastfmApiKey: 'lfm', spotifyClientId: 'pub-id', audioQuality: '320', country: 'IT',
+  };
+  it('i segreti diventano placeholder, il resto passa intero', () => {
+    const out = redactRemoteSettings(s) as Record<string, unknown>;
+    expect(out.remoteToken).toBe(REDACTED);
+    expect(out.spotifyClientSecret).toBe(REDACTED);
+    expect(out.spotifyRefreshToken).toBe(REDACTED);
+    expect(out.lastfmApiKey).toBe(REDACTED);
+    expect(out.spotifyClientId).toBe('pub-id'); // client id non è un segreto
+    expect(out.audioQuality).toBe('320');
+    expect(s.remoteToken).toBe('abc123XYZ'); // l'originale non viene toccato
+  });
+  it('campo segreto vuoto resta vuoto (non "valorizzato" finto)', () => {
+    const out = redactRemoteSettings({ ...s, lastfmApiKey: '' }) as Record<string, unknown>;
+    expect(out.lastfmApiKey).toBe('');
+  });
+  it('input non-oggetto passa invariato', () => {
+    expect(redactRemoteSettings(null)).toBe(null);
+    expect(redactRemoteSettings('x')).toBe('x');
   });
 });
 

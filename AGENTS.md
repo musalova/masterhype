@@ -155,6 +155,15 @@
   per IP → 429 (401 infiniti gratuiti = brute-force/revoked-loop amichevoli).
   prefsSet rifiuta chiavi fuori da `^mh-pref-[a-z0-9-]{1,48}$` e valori >256KB
   (la queue reale arriva a ~100KB).
+  **Segreti mai via API** (`remoteGuards.ts`): `SECRET_SETTINGS` =
+  `remoteToken`/`spotifyClientSecret`/`spotifyRefreshToken`/`lastfmApiKey`
+  redatti a `REDACTED` ('••••••••') su `settings:get` E sul broadcast SSE
+  `settings:event` per TUTTI i remoti, admin incluso (un telefono non deve
+  ritrovarsi il codice admin in `mh-settings-cache`). Il placeholder è
+  strippato in `sanitizeRemoteSettings` — un salva-impostazioni dal telefono
+  non può sovrascrivere il segreto vero col placeholder. `remote:info`
+  (espone `token` per il QR desktop) è in `ADMIN_ONLY_CHANNELS`. Se si
+  aggiunge un campo segreto a Settings va messo in SECRET_SETTINGS.
 - Timeout per-canale (`CALL_TIMEOUTS` in renderer/remote.ts): 10s default decide
   "PC morto"; i canali che fan-out sul PC (search 40s, rec:*/trends 45s,
   assistant 60s, yt:* dettagli 30s) hanno budget proprio. Su timeout il catch fa
