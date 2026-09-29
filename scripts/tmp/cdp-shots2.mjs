@@ -1,6 +1,6 @@
 // Ri-shot delle schermate corrette
 import { writeFileSync } from 'node:fs';
-import { ev, sleep, close } from './cdp-test.mjs';
+import { ev, sleep, close } from '../cdp-test.mjs';
 
 const pages = await (await fetch('http://127.0.0.1:9222/json')).json();
 const page = pages.find((p) => p.type === 'page');

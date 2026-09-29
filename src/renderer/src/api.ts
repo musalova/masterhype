@@ -1,5 +1,6 @@
 import type { MasterHypeApi } from '../../preload/index';
-import { remoteApi, isRemote } from './remote';
+import { isRemote } from './remote';
+import { remoteApi } from './remoteApi';
 
 declare global {
   interface Window {

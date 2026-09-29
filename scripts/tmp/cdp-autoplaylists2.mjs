@@ -1,4 +1,4 @@
-import { ev, sleep, close } from './cdp-test.mjs';
+import { ev, sleep, close } from '../cdp-test.mjs';
 
 await ev(`window.__app.getState().nav('playlists')`);
 await sleep(800);

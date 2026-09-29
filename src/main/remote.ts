@@ -7,6 +7,7 @@ import { handlers } from './handlers';
 import { getSettings } from './settings';
 import { getTrack } from './services/library';
 import { userExists } from './services/users';
+import { trackUsage } from './services/engine';
 import * as devices from './services/devices';
 import { report } from './services/telemetry';
 import { serveUpdateRoutes } from './update';
@@ -308,6 +309,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, auth: Auth):
     if (!Number.isFinite(id) || !userExists(id)) return null;
     devices.bindDevice(auth.deviceId!, id);
     auth.userId = id;
+    // Percorso legacy: i client recenti chiamano device:claim esplicito.
+    // Contato in 'usage' — quando resta a zero il ramo è eliminabile.
+    trackUsage('implicit-claim', id);
     return id;
   };
   const uidFor = (bootstrap: boolean): number | null => {

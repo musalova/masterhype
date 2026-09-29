@@ -2,7 +2,15 @@ import { create } from 'zustand';
 import type { TrackRef, LibraryTrack, DownloadJob, BurnProgress, Settings, SuggestedTrack, RemoteLike, MhUser } from '../../shared/types';
 import { api, isRemote, mediaUrl } from './api';
 import { isOnline, myUserId, setLocalUserId, resyncWhen, isStandalone, remoteBase, remoteToken, claimProfile, watchClaimWindow, markPcFresh } from './remote';
-import { loadPref, savePref, migratePrefs, syncPrefs, clearLocalPrefs, pushDirty, archiveDirtyValues } from './persist';
+import { savePref, migratePrefs, syncPrefs, clearLocalPrefs, pushDirty, archiveDirtyValues } from './persist';
+import { audioDuration, fetchTrackBlob } from './trackFetch';
+import {
+  CD_KEY, VOL_KEY, persistCd, savedVolume, XF_KEY, savedXf,
+  savedPrefs, savePrefs, PREF_KEY, QUEUE_KEY, SCREEN_KEY, SCREENS, savedScreen,
+  loadPendingCdSet,
+} from './storePersist';
+import type { Screen } from './storePersist';
+export type { Screen };
 import { queueRemoteLike, queueLibLike, queueEvent, queueSearchPick, queueListen, queueDownload, pendingLikesMap, pendingLikeEntries } from './pendingSync';
 import { cachedAuto, cacheAuto, offlineStation, offlineRadio } from './offlineRec';
 import { phoneReconcile, phoneIndex, phoneIndexPut, phoneIndexDel, phonePut, phoneDel, phoneInvalidate, phoneVidId, phoneMigrateId, phoneEvictOldest, phoneFreeMB } from './phoneLocal';
@@ -17,7 +25,7 @@ migratePrefs({
   'mh-queue-v1': 'mh-pref-queue',
 });
 
-export type Screen = 'home' | 'stations' | 'search' | 'library' | 'playlists' | 'cd' | 'trends' | 'assistant' | 'downloads' | 'settings';
+
 
 interface PlayerState {
   current?: TrackRef & { local?: boolean };
@@ -176,55 +184,6 @@ interface AppState {
 let toastId = 0;
 let sleepIv: ReturnType<typeof setInterval> | null = null;
 
-// Chiavi 'mh-pref-*': si sincronizzano sullo store condiviso PC↔telefono
-const CD_KEY = 'mh-pref-cdqueue';
-// Download avviati "per il CD" ancora in corso: persistiti (chiave locale, non
-// condivisa) così un riavvio dell'app non perde l'aggiunta automatica.
-// Per-utente: un'aggiunta avviata dal profilo A non deve finire nel CD del B.
-const PENDING_CD_KEY = () => `mh-cd-pending:u${myUserId()}`;
-const loadPendingCd = (): Set<string> => {
-  try {
-    const legacy = localStorage.getItem('mh-cd-pending'); // migrazione → profilo corrente
-    if (legacy != null && localStorage.getItem(PENDING_CD_KEY()) == null)
-      localStorage.setItem(PENDING_CD_KEY(), legacy);
-    if (legacy != null) localStorage.removeItem('mh-cd-pending');
-    return new Set(JSON.parse(localStorage.getItem(PENDING_CD_KEY()) ?? '[]') as string[]);
-  }
-  catch { return new Set(); }
-};
-const savePendingCd = (s: Set<string>) => {
-  try { localStorage.setItem(PENDING_CD_KEY(), JSON.stringify([...s])); } catch { /* quota */ }
-};
-class PendingCdSet extends Set<string> {
-  add(v: string): this { super.add(v); savePendingCd(this); return this; }
-  delete(v: string): boolean { const r = super.delete(v); savePendingCd(this); return r; }
-  clear(): void { super.clear(); savePendingCd(this); }
-}
-const VOL_KEY = 'mh-pref-volume';
-const persistCd = (q: LibraryTrack[]) => savePref(CD_KEY, q.map((t) => t.id));
-const savedVolume = () => loadPref<number>(VOL_KEY, 0.8);
-const XF_KEY = 'mh-pref-crossfade';
-// Tollera i formati storici: '0' grezzo (legacy), '"0"', false, 0
-const savedXf = () => { const v = loadPref<unknown>(XF_KEY, true); return v !== false && v !== 0 && v !== '0'; };
-const PREF_KEY = 'mh-pref-player';
-// Autoplay stile Spotify: a fine coda la radio continua con brani simili.
-// Default ON (come "Autoplay similar content" di Spotify); la scelta persiste.
-const savedPrefs = (): { shuffle: boolean; repeat: PlayerState['repeat']; radio: boolean } => {
-  const p = loadPref<{ shuffle?: boolean; repeat?: string; radio?: boolean }>(PREF_KEY, {});
-  return { shuffle: !!p.shuffle, repeat: p.repeat === 'all' || p.repeat === 'one' ? p.repeat : 'off', radio: p.radio ?? true };
-};
-const savePrefs = (p: PlayerState) => savePref(PREF_KEY, { shuffle: p.shuffle, repeat: p.repeat, radio: p.radio });
-const QUEUE_KEY = 'mh-pref-queue';
-const SCREEN_KEY = 'mh-pref-screen';
-const SCREENS: Screen[] = ['home', 'stations', 'search', 'library', 'playlists', 'cd', 'trends', 'assistant', 'downloads', 'settings'];
-// Riapre l'app sull'ultima schermata visitata (preferenza persistente)
-const savedScreen = (): Screen => {
-  const s = loadPref<Screen>(SCREEN_KEY, 'home');
-  return SCREENS.includes(s) ? s : 'home';
-};
-// Dedup "stessa canzone" anche con videoId diversi (remaster, topic channel, ecc.)
-// — stessa chiave esatta del server (shared/taste.trackKey: NFD+punteggiatura).
-const normKey = (t: { artist: string; title: string }) => trackKey(t.artist, t.title);
 
 export const useApp = create<AppState>((set, get) => ({
   screen: savedScreen(),
@@ -382,7 +341,7 @@ export const useApp = create<AppState>((set, get) => ({
   enqueue: (t) => {
     const s = get();
     if (!s.player.current) { s.play(t); return; }
-    const dup = s.player.queue.some((x) => x.videoId === t.videoId || normKey(x) === normKey(t));
+    const dup = s.player.queue.some((x) => x.videoId === t.videoId || trackKey(x.artist, x.title) === trackKey(t.artist, t.title));
     if (dup || s.player.current.videoId === t.videoId) { s.toast('Già in coda', 'info'); return; }
     set((x) => ({ player: { ...x.player, queue: [...x.player.queue, t as TrackRef & { local?: boolean }] } }));
     s.toast(`In coda: ${t.title}`, 'ok');
@@ -472,8 +431,8 @@ export const useApp = create<AppState>((set, get) => ({
       if (p2.current?.videoId !== cur.videoId) return; // cambiato nel frattempo
       // dedup su videoId E su artista|titolo: lo stesso brano con altro videoId
       // (remaster, topic channel) non deve rientrare in coda
-      const seenKeys = new Set(p2.queue.map((x) => normKey(x)));
-      const fresh = ups.filter((u) => u.videoId && !p2.queue.some((x) => x.videoId === u.videoId) && !seenKeys.has(normKey(u))).slice(0, 15);
+      const seenKeys = new Set(p2.queue.map((x) => trackKey(x.artist, x.title)));
+      const fresh = ups.filter((u) => u.videoId && !p2.queue.some((x) => x.videoId === u.videoId) && !seenKeys.has(trackKey(u.artist, u.title))).slice(0, 15);
       if (!fresh.length) { set((s) => ({ player: { ...s.player, playing: false }, buffering: false })); return; }
       // Trim: la radio crescerebbe all'infinito — tieni solo 25 brani di
       // cronologia dietro l'indice (prev() resta utile), memoria limitata.
@@ -755,7 +714,7 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   cdQueue: [],
-  pendingCd: new PendingCdSet(loadPendingCd()),
+  pendingCd: loadPendingCdSet(),
   addToCd: (t, silent = false) => {
     // Esiste solo nella memoria del telefono: il PC non ha il file → non masterizzabile
     if ((t as LibraryTrack).phoneOnly) {
@@ -763,7 +722,7 @@ export const useApp = create<AppState>((set, get) => ({
       return;
     }
     // dedup anche su artista+titolo: la stessa canzone con videoId diverso non entra due volte
-    if (get().cdQueue.some((x) => x.id === t.id || normKey(x) === normKey(t))) {
+    if (get().cdQueue.some((x) => x.id === t.id || trackKey(x.artist, x.title) === trackKey(t.artist, t.title))) {
       if (!silent) get().toast(`${t.title} è già nella tracklist`, 'info');
       return;
     }
@@ -1010,7 +969,7 @@ export const useApp = create<AppState>((set, get) => ({
       // segue quell'id → niente doppioni in libreria, resta offline.
       for (const a of added) {
         const real = get().library.find((t) => !t.phoneOnly && t.id > 0 && t.videoId.startsWith('local:')
-          && normKey(t) === normKey(a) && !get().phoneIds.has(t.id));
+          && trackKey(t.artist, t.title) === trackKey(a.artist, a.title) && !get().phoneIds.has(t.id));
         if (real && await phoneMigrateId(a.id, real.id).catch(() => false)) {
           set((x) => {
             const ids = new Set(x.phoneIds); ids.delete(a.id); ids.add(real.id);
@@ -1041,50 +1000,7 @@ export const useApp = create<AppState>((set, get) => ({
   },
 }));
 
-// Durata di un file audio locale (metadata del browser), undefined se illeggibile
-function audioDuration(f: File): Promise<number | undefined> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(f);
-    const a = new Audio();
-    const done = (d?: number) => { URL.revokeObjectURL(url); resolve(d && Number.isFinite(d) ? Math.round(d) : undefined); };
-    a.preload = 'metadata';
-    a.onloadedmetadata = () => done(a.duration);
-    a.onerror = () => done();
-    setTimeout(() => done(), 5000);
-    a.src = url;
-  });
-}
 
-// Download progressivo dal PC con deadline: 20s agli header, 30s senza byte
-// sul corpo → abort (il chiamante ripiega sullo stream diretto). Progresso
-// 0..1 via onPct quando Content-Length è noto.
-async function fetchTrackBlob(url: string, onPct?: (pct: number) => void): Promise<Blob | null> {
-  const ctl = new AbortController();
-  const dead = (ms: number) => setTimeout(() => ctl.abort(), ms);
-  let timer = dead(20_000);
-  try {
-    const res = await fetch(url, { signal: ctl.signal }).catch(() => null);
-    if (!res?.ok || !res.body) return null;
-    const total = Number(res.headers.get('content-length') ?? 0);
-    const reader = res.body.getReader();
-    const chunks: BlobPart[] = [];
-    let got = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value?.length) continue;
-      clearTimeout(timer); timer = dead(30_000); // stallo: byte fermi → abort
-      chunks.push(value);
-      got += value.length;
-      if (total > 0 && onPct) onPct(Math.min(1, got / total));
-    }
-    // Corpo troncato (TCP RST a metà download): MAI persistere un blob
-    // "completo" fasullo — null → il chiamante ripiega sullo stream diretto.
-    if (!got || (total > 0 && got !== total)) return null;
-    return new Blob(chunks, { type: res.headers.get('content-type') ?? 'audio/mpeg' });
-  } catch { return null; } // abort/rete: il chiamante decide il fallback
-  finally { clearTimeout(timer); }
-}
 
 // Persistenza coda: salva (debounced) a ogni cambio del player
 let qTimer: ReturnType<typeof setTimeout> | undefined;

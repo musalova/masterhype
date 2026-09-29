@@ -1,4 +1,4 @@
-import { ev, enableLogs, getLogs, sleep, close } from './cdp-test.mjs';
+import { ev, enableLogs, getLogs, sleep, close } from '../cdp-test.mjs';
 await enableLogs();
 await ev(`window.__app.getState().startStation('per-te').catch(()=>{})`);
 await sleep(11000);

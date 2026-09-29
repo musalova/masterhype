@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Disc3, Heart, ThumbsDown, Shuffle, Repeat, Repeat1, ListMusic, X, Radio, Waves, ChevronUp, Loader2, Moon } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Disc3, Heart, ThumbsDown, Shuffle, Repeat, Repeat1, ListMusic, Radio, Waves, ChevronUp, Loader2 } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
 import { useApp } from '../store';
 import { api, mediaUrl, isRemote } from '../api';
 import { usePersistedState } from '../persist';
@@ -9,9 +9,12 @@ import { pushMediaSession, stopMediaSession } from '../nativeMedia';
 import { pushBack } from '../backStack';
 import { ScreenErrorBoundary } from './common';
 import { CoverImg } from './CoverImg';
-import { phoneAudioUrlFor, phoneCoverUrl, phoneVidId, phoneInvalidate } from '../phoneLocal';
-import { isOnline, retryNow } from '../remote';
+import { phoneCoverUrl, phoneVidId, phoneInvalidate } from '../phoneLocal';
+import { isOnline } from '../remote';
 import NowPlaying, { prefetchLyrics } from './NowPlaying';
+import QueuePanel from './QueuePanel';
+import SleepTimer from './SleepTimer';
+import { srcOf } from '../playerSrc';
 import type { LibraryTrack, TrackRef } from '../../../shared/types';
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -29,126 +32,6 @@ const TARGET_LUFS = -14;
 const gainMap = new Map<string, number>(); // videoId → moltiplicatore di volume
 const gainOf = (lufs: number) => Math.min(2.5, Math.max(0.15, Math.pow(10, (TARGET_LUFS - lufs) / 20)));
 
-// Pannello "In coda": lista dei brani in riproduzione, click per saltare, X per rimuovere
-function QueuePanel({ onClose }: { onClose: () => void }) {
-  const { player, playAt, removeFromQueue } = useApp();
-  return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }}
-      transition={{ duration: 0.18 }}
-      className="absolute bottom-24 right-4 w-80 max-h-96 bg-panel border border-line rounded-xl shadow-2xl shadow-black/60 flex flex-col z-50 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-line">
-        <span className="text-sm font-semibold">In coda · {player.queue.length}</span>
-        <button onClick={onClose} className="text-dim hover:text-txt"><X size={15} /></button>
-      </div>
-      <div className="overflow-y-auto flex-1 py-1">
-        {player.queue.map((t, i) => (
-          <div key={`${t.videoId}-${i}`}
-            className={`group flex items-center gap-2.5 px-3 py-1.5 cursor-pointer hover:bg-panel2/70 ${i === player.queueIndex ? 'bg-accent/10' : ''}`}
-            onClick={() => { playAt(i); }}>
-            <div className="w-8 h-8 rounded bg-panel2 overflow-hidden shrink-0">
-              <CoverImg src={t.thumbnail} trackId={t.id} videoId={t.videoId} className="w-full h-full object-cover" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className={`text-xs font-medium truncate ${i === player.queueIndex ? 'text-accent' : ''}`}>{t.title}</div>
-              <div className="text-[10px] text-dim truncate">{t.artist}</div>
-            </div>
-            {i === player.queueIndex && player.playing && <div className="eq"><i /><i /><i /></div>}
-            <button onClick={(e) => { e.stopPropagation(); removeFromQueue(i); }}
-              className="opacity-0 group-hover:opacity-100 text-dim hover:text-red-400 transition-opacity"><X size={13} /></button>
-          </div>
-        ))}
-        {player.queue.length === 0 && <div className="px-4 py-6 text-xs text-dim text-center">Coda vuota — riproduci un brano.</div>}
-      </div>
-    </motion.div>
-  );
-}
-
-// Sleep timer stile Spotify: menu con minuti o "a fine brano"; quando attivo
-// mostra il countdown residuo. Lo stato vive nello store (sleepAt/endOfTrack).
-const SLEEP_OPTS: (number | 'end')[] = [5, 10, 15, 30, 45, 60, 'end'];
-function SleepTimer() {
-  const sleepAt = useApp((s) => s.sleepAt);
-  const sleepEnd = useApp((s) => s.sleepEndOfTrack);
-  const setSleepTimer = useApp((s) => s.setSleepTimer);
-  const [open, setOpen] = useState(false);
-  const [left, setLeft] = useState(0);
-  useEffect(() => {
-    if (!sleepAt) { setLeft(0); return; }
-    const t = setInterval(() => setLeft(Math.max(0, Math.ceil((sleepAt - Date.now()) / 60000))), 5000);
-    setLeft(Math.max(0, Math.ceil((sleepAt - Date.now()) / 60000)));
-    return () => clearInterval(t);
-  }, [sleepAt]);
-  const active = sleepAt != null || sleepEnd;
-  return (
-    <div className="relative max-md:hidden">
-      <button onClick={() => setOpen((v) => !v)}
-        title={sleepEnd ? 'Sleep timer: pausa a fine brano' : sleepAt ? `Sleep timer: pausa tra ~${left} min` : 'Sleep timer — spegne la musica'}
-        className={`transition-colors ${active ? 'text-accent' : 'text-dim hover:text-txt'}`}>
-        <Moon size={16} fill={active ? 'currentColor' : 'none'} />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-9 right-0 z-50 w-44 bg-panel2 border border-line rounded-lg shadow-2xl py-1">
-            <div className="px-3 py-1.5 text-[11px] text-dim uppercase tracking-wide">Spegni la musica tra</div>
-            {SLEEP_OPTS.map((v) => (
-              <button key={String(v)}
-                onClick={() => { setSleepTimer(v); setOpen(false); }}
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-line/60">
-                {v === 'end' ? 'A fine brano' : `${v} minuti`}
-              </button>
-            ))}
-            {active && (
-              <button onClick={() => { setSleepTimer(null); setOpen(false); }}
-                className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-line/60 border-t border-line/60">
-                Disattiva timer
-              </button>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// Sorgente audio di una traccia: file scaricato SUL telefono (IndexedDB,
-// funziona anche senza rete), poi file della libreria (media:// su desktop,
-// http://<pc>/media sul telefono), infine stream remoto con auto-riparazione
-// (se il videoId è difettoso il main ne trova un altro da solo)
-const srcOf = async (t: TrackRef & { local?: boolean }, skipPc = false): Promise<{ url: string; videoId: string; healed: boolean; local?: boolean }> => {
-  const lib = t as LibraryTrack;
-  // Telefono: prova SEMPRE la copia su IndexedDB — per id libreria O per id
-  // sintetico del videoId (brani scaricati fuori dalla libreria). Una get è
-  // economica e l'URL è in cache: niente race con phoneInit, niente stale.
-  if (isRemote()) {
-    const u = await phoneAudioUrlFor(t);
-    if (u) return { url: u, videoId: t.videoId, healed: false, local: true };
-  }
-  // File sul PC: solo se il PC risponde — offline l'<audio> resterebbe appeso
-  // ~20s su un URL morto prima dell'errore. YouTube diretto è la via giusta.
-  if (!skipPc && lib.filePath && lib.id && (!isRemote() || isOnline())) {
-    const url = mediaUrl('audio', lib.id);
-    if (!isRemote()) return { url, videoId: t.videoId, healed: false, local: true };
-    // Finestra probe: isOnline() può essere ancora true col PC appena morto —
-    // un audio element ci metterebbe ~20-60s a dichiarare l'errore. Ping
-    // range 0-0 (3s): QUALSIASI risposta HTTP = host vivo (anche 404: la
-    // gestione errori del brano resta la stessa); nessuna risposta = PC giù →
-    // kick del probe ufficiale + risoluzione diretta, senza i 10s di call().
-    const ac = new AbortController();
-    const tmr = setTimeout(() => ac.abort(), 3000);
-    try {
-      await fetch(url, { headers: { Range: 'bytes=0-0' }, signal: ac.signal });
-      return { url, videoId: t.videoId, healed: false, local: true };
-    } catch {
-      retryNow(); // aggiorna isOnline() reale; intanto non fidiamoci più del PC
-      const { directPlayStream } = await import('../direct');
-      return directPlayStream(t.videoId, t.artist, t.title);
-    } finally { clearTimeout(tmr); }
-  }
-  // Stream: col PC up passa dal server (auto-riparazione), col PC giù
-  // il client remoto risolve YouTube da solo (modalità autonoma).
-  return api().yt.playStream(t.videoId, t.artist, t.title);
-};
 
 export default function PlayerBar() {
   const { player, toggle, next, prev, setVolume, addToCd, downloadToCd, library, toggleShuffle, cycleRepeat, toggleRadio, toggleCrossfade, radioNext, playAt, toggleLike, remoteLiked, recordRemote, dislike } = useApp();

@@ -1,4 +1,4 @@
-import { ev, enableLogs, getLogs, sleep } from './cdp-test.mjs';
+import { ev, enableLogs, getLogs, sleep } from '../cdp-test.mjs';
 await enableLogs();
 
 // 1. Pannello gusti in Impostazioni

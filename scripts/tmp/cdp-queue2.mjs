@@ -1,4 +1,4 @@
-import { ev, sleep, close } from './cdp-test.mjs';
+import { ev, sleep, close } from '../cdp-test.mjs';
 // riproduci un brano vero dalla coda ripristinata
 await ev(`(()=>{const p=window.__app.getState().player;window.__app.getState().play(p.queue[p.queueIndex], p.queue, p.queueIndex)})()`);
 await sleep(3500);

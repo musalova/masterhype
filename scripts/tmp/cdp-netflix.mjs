@@ -1,4 +1,4 @@
-import { ev, enableLogs, getLogs, sleep, close } from './cdp-test.mjs';
+import { ev, enableLogs, getLogs, sleep, close } from '../cdp-test.mjs';
 await enableLogs();
 // vai in Home e attendi i dati
 await ev(`window.__app.getState().nav('home')`);

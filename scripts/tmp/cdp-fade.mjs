@@ -1,4 +1,4 @@
-import { ev, enableLogs, getLogs, sleep } from './cdp-test.mjs';
+import { ev, enableLogs, getLogs, sleep } from '../cdp-test.mjs';
 await enableLogs();
 
 // Stato: coda ripristinata, in pausa. Metto play e poi skip manuale → deve sfumare

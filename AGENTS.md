@@ -83,7 +83,8 @@
 - `src/main/services/` — `ytmusic.ts` (youtubei.js), `downloader.ts` (yt-dlp+ffmpeg), `library.ts`,
   `sources.ts` (Deezer/Last.fm/Spotify), `recommend.ts` (scoring+assistente), `trends.ts`, `burner.ts`
 - `src/preload/index.ts` — contextBridge `window.masterhype`
-- `src/renderer/` — React + Tailwind v4 + Framer Motion + zustand (`store.ts`)
+- `src/renderer/` — React + Tailwind v4 + Framer Motion + zustand (`store.ts`;
+  chiavi/prefs persistite in `storePersist.ts`, blob track in `trackFetch.ts`)
 - `tools/BurnHelper.cs` — C# 5 max! (compilato col csc.exe di sistema .NET 4.0): IMAPI2 audio CD + data CD.
   **Rilevamento disco**: `CurrentMediaStatus` restituisce flag `IMAPI_FORMAT2_DATA_MEDIA_STATE`
   (BLANK=2, OVERWRITE_ONLY=1, APPENDABLE=4, FINAL_SESSION=8, poi DAMAGED/ERASE_REQUIRED/
@@ -140,7 +141,8 @@
     (BOOTSTRAP_CHANNELS) e `device:claim`. Un device non legato che chiama un
     canale dati con `X-MH-User` valido fa claim IMPLICITO (compatibilità con
     client pre-claim: stesso livello di fiducia, il token l'ha già consegnato
-    il pairing autorizzato dal PC).
+    il pairing autorizzato dal PC). Ogni uso è contato in `usage` come
+    `implicit-claim` — quando resta a zero nel report il ramo è eliminabile.
   · **claim/rebind**: il primo claim è libero; ri-legare un device già associato
     richiede la finestra «Accoppia telefono» aperta sul PC (403 altrimenti → il
     renderer mostra l'attesa e riprova con `watchClaimWindow`) oppure l'admin
@@ -221,7 +223,8 @@
   QR monouso, token mai nelle URL (proxy SW /__pc/*). Se serve confidenzialità
   vera fuori casa: Tailscale (già supportato, è una VPN cifrata).
   (NON duplicare logica: aggiungere il canale lì, ipc.ts lo registra e remote.ts lo espone)
-- `src/renderer/src/remote.ts` — specchio di `MasterHypeApi` via HTTP+SSE; `api.ts` sceglie
+- `src/renderer/src/remote.ts` — connessione al PC (conf, token, SSE, claim);
+  `remoteApi.ts` = specchio di `MasterHypeApi` via HTTP+SSE; `api.ts` sceglie
   `window.masterhype ?? remoteApi`
 - Preferenze condivise: la tabella `prefs` del DB è lo store unico. Solo le chiavi `mh-pref-*`
   si sincronizzano (hydrate filtra su quel prefisso). `savePref` scrive sempre anche nel DB

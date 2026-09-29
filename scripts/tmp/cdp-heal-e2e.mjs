@@ -1,5 +1,5 @@
 // E2E: play di un TrackRef con videoId difettoso → auto-riparazione → audio in play.
-import { ev, sleep, close, enableLogs, getLogs } from './cdp-test.mjs';
+import { ev, sleep, close, enableLogs, getLogs } from '../cdp-test.mjs';
 
 await enableLogs();
 await sleep(2500);

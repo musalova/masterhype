@@ -1,4 +1,4 @@
-import { ev, enableLogs, getLogs, sleep, close } from './cdp-test.mjs';
+import { ev, enableLogs, getLogs, sleep, close } from '../cdp-test.mjs';
 await enableLogs();
 // cambia preferenze: vai su stations, ordina libreria per artista, mute, tab trends
 await ev(`window.__app.getState().nav('library')`);

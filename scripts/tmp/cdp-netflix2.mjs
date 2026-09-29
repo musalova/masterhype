@@ -1,4 +1,4 @@
-import { ev, sleep, close } from './cdp-test.mjs';
+import { ev, sleep, close } from '../cdp-test.mjs';
 await ev(`document.querySelectorAll('section')[2]?.scrollIntoView()`);
 await sleep(800);
 const shot = await (async()=>{

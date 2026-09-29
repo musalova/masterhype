@@ -1,4 +1,4 @@
-import { ev, sleep, close } from './cdp-test.mjs';
+import { ev, sleep, close } from '../cdp-test.mjs';
 // dopo riavvio: schermata ripristinata? audio muto?
 console.log('restored:', JSON.stringify(await ev(`(()=>{
   const p=window.__app.getState().player;

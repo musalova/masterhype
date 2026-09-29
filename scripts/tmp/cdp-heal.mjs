@@ -1,6 +1,6 @@
 // Test live dell'auto-riparazione: infila in coda un brano con videoId fasullo
 // e verifica che playStream lo ripari cercando un'alternativa.
-import { ev, sleep, close, enableLogs, getLogs } from './cdp-test.mjs';
+import { ev, sleep, close, enableLogs, getLogs } from '../cdp-test.mjs';
 
 await enableLogs();
 await sleep(2500);

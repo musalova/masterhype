@@ -1,4 +1,4 @@
-import { ev, enableLogs, getLogs, sleep, close } from './cdp-test.mjs';
+import { ev, enableLogs, getLogs, sleep, close } from '../cdp-test.mjs';
 await enableLogs();
 const st = await ev(`(()=>{const p=window.__app.getState().player;return {len:p.queue.length,cur:p.current?.title,playing:p.playing}})()`);
 console.log('state:', JSON.stringify(st));

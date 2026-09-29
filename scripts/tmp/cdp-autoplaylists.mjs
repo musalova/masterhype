@@ -1,5 +1,5 @@
 // Test live: playlist autogenerate + quick tiles + pannello playlist
-import { ev, enableLogs, getLogs, sleep, close } from './cdp-test.mjs';
+import { ev, enableLogs, getLogs, sleep, close } from '../cdp-test.mjs';
 
 await enableLogs();
 

@@ -1,4 +1,4 @@
-import { ev, enableLogs, getLogs, sleep, close } from './cdp-test.mjs';
+import { ev, enableLogs, getLogs, sleep, close } from '../cdp-test.mjs';
 await enableLogs();
 // stato coda dopo ripristino
 console.log('boot:', JSON.stringify(await ev(`(()=>{const p=window.__app.getState().player;return {len:p.queue.length,idx:p.queueIndex,cur:p.current?.title}})()`)));

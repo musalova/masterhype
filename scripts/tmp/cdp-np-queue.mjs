@@ -1,4 +1,4 @@
-import { ev, enableLogs, getLogs, sleep, close } from './cdp-test.mjs';
+import { ev, enableLogs, getLogs, sleep, close } from '../cdp-test.mjs';
 await enableLogs();
 // riparti dal brano in coda
 await ev(`(()=>{const p=window.__app.getState().player;window.__app.getState().play(p.queue[p.queueIndex]||p.queue[0], p.queue, p.queueIndex>=0?p.queueIndex:0)})()`);

@@ -1,6 +1,6 @@
 // Screenshot di ogni schermata per l'audit visivo
 import { writeFileSync } from 'node:fs';
-import { ev, enableLogs, getLogs, sleep, close } from './cdp-test.mjs';
+import { ev, enableLogs, getLogs, sleep, close } from '../cdp-test.mjs';
 
 await enableLogs();
 const pages = await (await fetch('http://127.0.0.1:9222/json')).json();

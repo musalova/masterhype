@@ -1,4 +1,4 @@
-import { ev, close } from './cdp-test.mjs';
+import { ev, close } from '../cdp-test.mjs';
 console.log(await ev(`Object.keys(window.masterhype).join(',')`));
 const tr = await ev(`(async () => {
   const api = window.masterhype;

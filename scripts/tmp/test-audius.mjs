@@ -1,5 +1,5 @@
 // Test ramo Audius: risoluzione stream diretto + heal con match stretto
-import { ev, sleep, close } from './cdp-test.mjs';
+import { ev, sleep, close } from '../cdp-test.mjs';
 
 // 1) streamUrl su un id Audius vero (dalla search API)
 const r = await ev(`(async () => {

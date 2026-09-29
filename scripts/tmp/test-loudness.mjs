@@ -1,5 +1,5 @@
 // Test live: play di un brano remoto → attesa misura LUFS → verifica gain
-import { ev, enableLogs, getLogs, sleep, close } from './cdp-test.mjs';
+import { ev, enableLogs, getLogs, sleep, close } from '../cdp-test.mjs';
 
 await enableLogs();
 // Stato app pronto?

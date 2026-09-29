@@ -1,4 +1,4 @@
-import { ev, sleep, close } from './cdp-test.mjs';
+import { ev, sleep, close } from '../cdp-test.mjs';
 
 // Test ricerca completa: top result, categorie espanse, pagina artista
 const r = await ev(`(async () => {

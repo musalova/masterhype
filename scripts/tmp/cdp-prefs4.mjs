@@ -1,4 +1,4 @@
-import { ev, sleep, close } from './cdp-test.mjs';
+import { ev, sleep, close } from '../cdp-test.mjs';
 console.log('restored:', JSON.stringify(await ev(`(()=>({
   screen: window.__app.getState().screen,
   muted: localStorage.getItem('mh-pref-muted'),
