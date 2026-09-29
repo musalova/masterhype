@@ -1,4 +1,10 @@
 {
+  "0.5.6": [
+    "I download tengono l'audio originale: il volume si uniforma in riproduzione, il file non viene più alterato",
+    "Il taglio dei silenzi a inizio/fine brano è spento di default (poteva tagliare intro voluti) — riattivabile in Impostazioni",
+    "Quando YouTube cambia qualcosa, l'app del telefono aggiorna da sola le connessioni senza aspettare una nuova versione",
+    "Se usi Tailscale, Impostazioni ti dice che il telefono funziona anche fuori casa"
+  ],
   "0.4.1": [
     "Il telefono ora funziona anche lontano da casa o a PC spento: cerca, ascolta e scarica musica da solo",
     "Aggiornamenti automatici più semplici su PC e telefono, senza pairing obbligatorio",
