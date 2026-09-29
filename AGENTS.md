@@ -266,6 +266,11 @@
   diretto); nel percorso diretto Content-Length≠size o <1KB → errore, MAI
   persistere blob "completi" fasulli. Indice localStorage non transazionale:
   la garanzia è phoneReconcile al boot (meta/`u` sono nel record IDB).
+  EVICTION ORIGINE: al primo open IDB `ensureStoragePersistence()` chiama
+  `navigator.storage.persist()` (solo isRemote): senza, l'origine è
+  best-effort e Chrome può sfrattare TUTTO (blob + code) sotto pressione
+  quota. Nell'APK/WebView è concesso quasi sempre; in un tab http://LAN può
+  essere negato (warn in console) — dipende dall'engagement del browser.
   PLAYBACK: `phoneAudioUrl` restituisce `/__phone/<id>` servito dal SERVICE WORKER
   (`public/sw.js`, già registrato in main.tsx) con Range support — NON un blob: URL.
   Motivo: l'audio mp4 di YouTube oggi arriva frammentato (DASH/fMP4, `ftyp dash` +

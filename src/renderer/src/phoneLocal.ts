@@ -1,5 +1,5 @@
 import type { LibraryTrack } from '../../shared/types';
-import { myUserId } from './remote';
+import { myUserId, isRemote } from './remote';
 
 // Musica scaricata SUL telefono: IndexedDB (funziona uguale in app Android e
 // browser/PWA — niente plugin Capacitor da mantenere). Ogni record contiene il
@@ -106,8 +106,26 @@ export async function phoneEvictOldest(needBytes: number, keepId?: number): Prom
   return evicted;
 }
 
+// Storage "persistente": senza navigator.storage.persist() i blob IDB e le
+// code localStorage poggiano su storage best-effort — sotto pressione quota il
+// browser può sfrattare TUTTA l'origine (download sul telefono compresi).
+// Nell'APK la WebView è ragionevolmente stabile; il client browser (UI servita
+// dal PC in un tab Chrome) è invece sfrattabile. Il browser decide da solo
+// (engagement, spazio): a noi basta chiederlo una volta, al primo uso del DB.
+let persistAsked = false;
+function ensureStoragePersistence(): void {
+  if (persistAsked || !isRemote()) return; // su desktop IDB non tiene nulla di critico
+  persistAsked = true;
+  try {
+    void navigator.storage?.persist?.().then((granted) => {
+      if (!granted) console.warn('[phoneLocal] storage persistente negato — i download possono essere sfrattati sotto pressione quota');
+    }).catch(() => {});
+  } catch { /* api assente */ }
+}
+
 let dbp: Promise<IDBDatabase> | null = null;
 function db(): Promise<IDBDatabase> {
+  ensureStoragePersistence();
   if (!dbp) {
     dbp = new Promise((res, rej) => {
       const r = indexedDB.open(DB_NAME, 1);
