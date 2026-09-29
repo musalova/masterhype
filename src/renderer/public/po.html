@@ -1,0 +1,11 @@
+<!doctype html>
+<!--
+  Documento "sandbox" per la VM BotGuard (PoToken). Serve una CSP permissiva
+  PROPRIA (unsafe-eval) perché la VM si auto-decodifica via eval: la pagina
+  principale mantiene la sua CSP stretta, solo questo iframe è rilassato.
+  Viene caricato same-origin in un iframe nascosto da potoken.ts.
+-->
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src * data: blob: 'unsafe-inline' 'unsafe-eval'">
+<title>po</title>

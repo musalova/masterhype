@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MasterHype</string>
+    <string name="title_activity_main">MasterHype</string>
+    <string name="package_name">com.masterhype.app</string>
+    <string name="custom_url_scheme">com.masterhype.app</string>
+</resources>

@@ -1,0 +1,52 @@
+appId: com.masterhype.app
+productName: MasterHype
+directories:
+  output: release
+files:
+  - out/**/*
+  - package.json
+  # @capacitor/android serve solo al progetto Android: i suoi build
+  # intermediates Gradle (classi .class) generano path >260 char in
+  # app.asar.unpacked -> il vecchio uninstaller abortiva su atomicRMDir.
+  - "!**/node_modules/@capacitor/**"
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter:
+      - "**/*"
+  - from: resources/icon.png
+    to: icon.png
+  # APK Android della stessa release (scritto da `npm run build:android` in
+  # build/apk): l'installer lo porta con sé e il server del PC lo distribuisce
+  # ai telefoni → aggiornare l'EXE aggiorna in automatico anche l'app.
+  - from: build/apk
+    to: apk
+    filter:
+      - MasterHype-Android.apk
+      - app-update.json
+# Feed generico per l'auto-aggiornamento: fa generare latest.yml + blockmap.
+# Default di build = GitHub Releases (DEFAULT_UPDATE_FEED in shared/updateFeed.ts);
+# settings.updateUrl resta un override runtime per feed privati/test.
+publish:
+  provider: generic
+  url: https://github.com/musalova/masterhype/releases/latest/download
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+  artifactName: MasterHype-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  # L'app è tray-resident: include lo script che termina MasterHype.exe
+  # prima di installare/disinstallare — senza, i file restano bloccati.
+  include: build/installer.nsh
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: MasterHype
+  language: "1040"
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  installerSidebar: build/installerSidebar.bmp
+  installerHeader: build/installerHeader.bmp

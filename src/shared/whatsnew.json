@@ -1,0 +1,40 @@
+{
+  "0.4.1": [
+    "Il telefono ora funziona anche lontano da casa o a PC spento: cerca, ascolta e scarica musica da solo",
+    "Aggiornamenti automatici più semplici su PC e telefono, senza pairing obbligatorio",
+    "Ricerca migliorata: artisti e brani si trovano più facilmente",
+    "Correzioni di stabilità"
+  ],
+  "0.4.2": [
+    "Stazioni e radio ora seguono davvero i tuoi gusti: contano artisti preferiti, generi e brani saltati",
+    "Gli artisti che segnali come \"non mi piace\" non tornano più nelle stazioni",
+    "\"La tua stazione\" parte subito anche con un profilo nuovo, dai brani che ti piacciono",
+    "Copertine più affidabili: se un'immagine manca viene recuperata in automatico, niente più icone rotte"
+  ],
+  "0.5.0": [
+    "Ogni telefono accoppiato ha ora un accesso tutto suo e vede solo il suo profilo",
+    "Accoppiamento più sicuro: il QR vale una sola volta e scade dopo pochi minuti",
+    "I codici di accesso non compaiono più nei link: meno rischi di lasciare tracce"
+  ],
+  "0.5.1": [
+    "Nuovo pulsante \"Scollega tutti\" nelle Impostazioni: se sospetti che qualcuno abbia il tuo codice, scollega ogni telefono in un colpo solo",
+    "App del telefono più sicura: aggiornamenti firmati in modo definitivo e modalità debug disattivata",
+    "Correzioni di stabilità"
+  ],
+  "0.5.2": [
+    "Aggiornamenti automatici attivi da subito, senza configurare niente: PC e telefono si aggiornano da soli",
+    "Il telefono non scambia più un PC lento per un PC spento: ricerche e suggerimenti lunghi non fanno più apparire il banner di errore"
+  ],
+  "0.5.3": [
+    "Quando la memoria del telefono è piena, i download più vecchi fanno spazio da soli ai nuovi",
+    "La dissolvenza tra i brani resta spenta sul telefono anche se è attiva sul PC",
+    "Verifica dispositivo più affidabile e correzioni di stabilità"
+  ],
+  "0.5.4": [
+    "Se Android chiude l'app mentre ascolti, la musica riparte da dove si era fermata",
+    "Quando sei offline vedi da quanto tempo sono stati aggiornati i dati che stai guardando",
+    "Le playlist che modifichi senza PC non si perdono più se nel frattempo sono state eliminate",
+    "Se lo streaming fa fatica la app te lo dice, invece di restare ferma in silenzio",
+    "I download sul telefono verificano che il file sia arrivato intero"
+  ]
+}

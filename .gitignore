@@ -1,0 +1,28 @@
+# Dipendenze e output di build
+node_modules/
+out/
+dist/
+release/
+*.tsbuildinfo
+*.log
+
+# Binari degli strumenti — scaricabili/ricompilabili, vedi README
+# (ffmpeg+ffprobe superano il limite 100MB/file di GitHub)
+resources/bin/*.exe
+
+# SEGRETI — MAI committare: questo repo è pubblico
+# Firma release APK: chiunque ce l'abbia può pubblicare aggiornamenti firmati
+android/keystore.properties
+android/keystore/
+.env
+.env.*
+gh-token*
+
+# Copie locali del feed/servizio PC
+build/apk/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

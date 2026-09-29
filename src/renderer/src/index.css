@@ -1,0 +1,331 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/* I gradienti delle card Stazioni vivono in shared/types.ts: dico a Tailwind di scansionarlo */
+@source '../../shared/types.ts';
+
+@theme {
+  --color-bg: #0a0a0b;
+  --color-panel: #101415;
+  --color-panel2: #171e20;
+  --color-line: #253033;
+  --color-txt: #f4f8f8;
+  --color-dim: #a3b0ae;
+  --color-accent: #2dd4bf;
+  --color-accent2: #ff9e3d;
+}
+
+/* Palette accent personalizzabile (Impostazioni → Aspetto). Le utility Tailwind
+   (bg-accent, text-accent…) leggono --color-accent: cambiando l'attributo cambia
+   tutta l'app, senza rebuild. */
+:root[data-accent='sunset'] { --color-accent: #2dd4bf; --color-accent2: #ff9e3d; }
+:root[data-accent='ocean']  { --color-accent: #38bdf8; --color-accent2: #6366f1; }
+:root[data-accent='lime']   { --color-accent: #4ade80; --color-accent2: #22d3ee; }
+:root[data-accent='violet'] { --color-accent: #a78bfa; --color-accent2: #f472b6; }
+:root[data-accent='gold']   { --color-accent: #fbbf24; --color-accent2: #fb7185; }
+:root[data-accent='mono']   { --color-accent: #f5f5f5; --color-accent2: #a3a3a3; }
+
+/* Riduci animazioni (Impostazioni → Aspetto): stesso effetto di prefers-reduced-motion */
+:root[data-motion='off'] .bgfx *, :root[data-motion='off'] .neon-text,
+:root[data-motion='off'] .neon-play::after, :root[data-motion='off'] .eq i,
+:root[data-motion='off'] .poster, :root[data-motion='off'] .card-hover { animation: none !important; transition: none !important; }
+
+/* Perf liste lunghe: le righe fuori schermo non vengono impaginate né dipinte */
+.row-cv { content-visibility: auto; contain-intrinsic-size: auto 52px; }
+
+/* Karaoke in modalità cinema: la riga nuova sale e appare */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+html, body, #root { height: 100%; }
+body {
+  background:
+    radial-gradient(1200px 500px at 80% -10%, color-mix(in srgb, var(--color-accent2) 7%, transparent), transparent 60%),
+    radial-gradient(900px 400px at 10% 110%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 60%),
+    var(--color-bg);
+  color: var(--color-txt);
+  font-family: 'Inter Variable', 'Segoe UI', system-ui, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: color-mix(in srgb, var(--color-accent) 35%, transparent); }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #263233; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3a4a4c; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.glow { box-shadow: 0 0 40px -8px color-mix(in srgb, var(--color-accent) 35%, transparent); }
+
+.card-hover { transition: transform .18s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease; }
+.card-hover:hover {
+  transform: translateY(-3px);
+  background: var(--color-panel2);
+  border-color: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  box-shadow: 0 12px 34px -14px rgba(0,0,0,.8), 0 0 0 1px color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+/* Slider (seek + volume): thumb rotondo accent con glow */
+input[type='range'] { -webkit-appearance: none; appearance: none; background: transparent; }
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--color-accent), var(--color-accent2));
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #fff; margin-top: -4px;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 60%, transparent);
+  transition: transform .12s ease;
+}
+input[type='range']:hover::-webkit-slider-thumb { transform: scale(1.25); }
+input[type='range']::-moz-range-track {
+  height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--color-accent), var(--color-accent2));
+}
+input[type='range']::-moz-range-thumb {
+  width: 12px; height: 12px; border: none; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+
+/* Focus visibile ma elegante */
+button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+/* Skeleton shimmer */
+.skeleton { position: relative; overflow: hidden; }
+.skeleton::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.07) 50%, transparent 70%);
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+@keyframes shimmer { 0% { transform: translateX(-100%);} 100% { transform: translateX(100%);} }
+
+/* Disco che ruota (player in riproduzione) */
+.spin-slow { animation: spin-slow 6s linear infinite; }
+@keyframes spin-slow { to { transform: rotate(360deg); } }
+
+/* Equalizzatore: scaleY (GPU) invece di height — niente layout thrash */
+.eq { display:inline-flex; gap:2px; align-items:flex-end; height:14px; }
+.eq i {
+  width:3px; height:14px; border-radius:1px;
+  background: linear-gradient(to top, var(--color-accent), var(--color-accent2));
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  animation: eq 0.9s ease-in-out infinite; transform-origin: bottom;
+}
+.eq i:nth-child(2){ animation-delay:.2s } .eq i:nth-child(3){ animation-delay:.4s } .eq i:nth-child(4){ animation-delay:.1s }
+@keyframes eq { 0%,100%{ transform: scaleY(.28) } 50%{ transform: scaleY(1) } }
+
+/* ============================================================
+   DISCOTECA CINEMATOGRAFICA — neon, orbe, forme geometriche
+   Regola perf: le orbe sfocate NON si animano; anima il wrapper
+   (transform = solo compositing GPU, niente repaint del blur).
+   ============================================================ */
+
+.bgfx { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+
+/* Orbe luminose: wrapper animato, figlio sfocato statico */
+.orb-wrap { position: absolute; will-change: transform; }
+.orb-wrap.o1 { top: -12%; right: -6%; animation: drift1 26s ease-in-out infinite alternate; }
+.orb-wrap.o2 { bottom: -18%; left: -8%; animation: drift2 32s ease-in-out infinite alternate; }
+.orb-wrap.o3 { top: 30%; left: 38%; animation: drift3 38s ease-in-out infinite alternate; }
+.orb { border-radius: 50%; }
+.orb-wrap.o1 .orb { width: 46vw; height: 46vw; background: var(--color-accent); opacity: .13; filter: blur(110px); }
+.orb-wrap.o2 .orb { width: 40vw; height: 40vw; background: var(--color-accent2); opacity: .11; filter: blur(120px); }
+.orb-wrap.o3 .orb { width: 30vw; height: 30vw; background: #2dd4bf; opacity: .06; filter: blur(130px); }
+@keyframes drift1 { from { transform: translate(0,0) scale(1); } to { transform: translate(-9vw,10vh) scale(1.18); } }
+@keyframes drift2 { from { transform: translate(0,0) scale(1.1); } to { transform: translate(11vw,-8vh) scale(.92); } }
+@keyframes drift3 { from { transform: translate(0,0) rotate(0deg); } to { transform: translate(-12vw,-6vh) rotate(40deg); } }
+
+/* Forme geometriche wireframe che fluttuano e ruotano */
+.bgfx .shape { position: absolute; border: 1.5px solid; will-change: transform; }
+.bgfx .tri {
+  top: -18px; left: 34%; width: 84px; height: 74px;
+  border: none; background: transparent;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent 70%);
+  animation: float-rot 34s linear infinite;
+}
+.bgfx .sq {
+  bottom: 15%; right: -16px; width: 58px; height: 58px;
+  border-color: color-mix(in srgb, var(--color-accent2) 15%, transparent); border-radius: 8px;
+  animation: float-rot 28s linear infinite reverse;
+}
+.bgfx .ring {
+  top: 52%; right: -26px; width: 76px; height: 76px; border-radius: 50%;
+  border-color: rgba(45,212,191,.08); filter: blur(.5px);
+  animation: float-y 22s ease-in-out infinite alternate;
+}
+@keyframes float-rot { from { transform: rotate(0deg) translateY(0); } 50% { transform: rotate(180deg) translateY(-30px); } to { transform: rotate(360deg) translateY(0); } }
+@keyframes float-y { from { transform: translateY(0) scale(1); } to { transform: translateY(-46px) scale(1.08); } }
+
+/* Pavimento synthwave: griglia prospettica luminosa in basso */
+.bgfx .grid-floor {
+  position: absolute; left: -20%; right: -20%; bottom: 0; height: 34%;
+  background:
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--color-accent) 6%, transparent) 0 2px, transparent 2px 64px),
+    repeating-linear-gradient(to top, color-mix(in srgb, var(--color-accent2) 5%, transparent) 0 2px, transparent 2px 40px);
+  transform: perspective(400px) rotateX(62deg);
+  transform-origin: bottom;
+  mask-image: linear-gradient(to top, rgba(0,0,0,.9), transparent 85%);
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,.9), transparent 85%);
+}
+
+/* Mobile: le forme geometriche stanno ancora più fuori, appena accennate */
+@media (max-width: 768px) {
+  .bgfx .tri { left: 62%; opacity: .7; }
+  .bgfx .sq { right: -38px; opacity: .6; }
+  .bgfx .ring { right: -52px; opacity: .55; }
+}
+
+/* Fari da discoteca: fasci conici che oscillano lentamente in alto */
+.bgfx .beam {
+  position: absolute; top: -22%; width: 26vw; height: 80vh;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent 70%);
+  clip-path: polygon(42% 0, 58% 0, 100% 100%, 0 100%);
+  transform-origin: 50% 0; will-change: transform;
+}
+.bgfx .beam.b1 { left: 12%; animation: sway 17s ease-in-out infinite alternate; }
+.bgfx .beam.b2 { right: 12%; background: linear-gradient(to bottom, color-mix(in srgb, var(--color-accent2) 6%, transparent), transparent 70%); animation: sway 21s ease-in-out infinite alternate-reverse; }
+@keyframes sway { from { transform: rotate(-14deg); } to { transform: rotate(14deg); } }
+
+/* Testo neon: alone luminoso che respira piano */
+.neon-text {
+  background: linear-gradient(120deg, var(--color-accent), var(--color-accent2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--color-accent) 45%, transparent));
+  animation: neon-breathe 4.5s ease-in-out infinite;
+}
+@keyframes neon-breathe {
+  0%,100% { filter: drop-shadow(0 0 10px color-mix(in srgb, var(--color-accent) 35%, transparent)); }
+  50% { filter: drop-shadow(0 0 20px color-mix(in srgb, var(--color-accent2) 55%, transparent)); }
+}
+
+/* Anello neon pulsante per il pulsante play in riproduzione */
+.neon-play { position: relative; }
+.neon-play::after {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-accent) 70%, transparent), 0 0 18px 2px color-mix(in srgb, var(--color-accent) 50%, transparent);
+  animation: neon-ring 2.2s ease-in-out infinite; pointer-events: none;
+}
+@keyframes neon-ring {
+  0%,100% { opacity: .45; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.07); }
+}
+
+/* Bordo neon animato (conico rotante) per la vista Now Playing */
+.np-frame { position: relative; }
+.np-frame::before {
+  content: ''; position: absolute; inset: -2px; z-index: 0; border-radius: inherit;
+  background: conic-gradient(from 0deg, transparent 0 40%, color-mix(in srgb, var(--color-accent) 80%, transparent) 50%, color-mix(in srgb, var(--color-accent2) 80%, transparent) 56%, transparent 66% 100%);
+  animation: np-spin 7s linear infinite; pointer-events: none;
+}
+@keyframes np-spin { to { transform: rotate(360deg); } }
+
+/* Indicatore attivo sidebar con alone neon */
+.nav-neon { box-shadow: 0 0 10px 1px color-mix(in srgb, var(--color-accent) 75%, transparent); }
+
+/* Accessibilità: tutte le animazioni ambientali si spengono */
+@media (prefers-reduced-motion: reduce) {
+  .bgfx *, .neon-text, .neon-play::after, .np-frame::before, .eq i { animation: none !important; }
+}
+
+/* ===== Lingua visiva "Netflix": poster, shelf, hero ===== */
+
+/* Shelf: riga orizzontale di poster, scrollbar nascosta, snap leggero */
+.shelf {
+  display: flex; gap: 14px; overflow-x: auto; padding: 6px 4px 14px;
+  scroll-behavior: smooth; scrollbar-width: none;
+}
+.shelf::-webkit-scrollbar { display: none; }
+
+/* Poster Netflix: a riposo pulito, all'hover si ingrandisce con ombra profonda.
+   z-index alto all'hover per "saltare fuori" dalla riga. */
+.poster {
+  position: relative; flex-shrink: 0; border-radius: 10px; overflow: visible;
+  transition: transform .22s cubic-bezier(.2,.7,.3,1.2), box-shadow .22s ease;
+}
+.poster:hover, .poster:focus-visible {
+  transform: scale(1.07) translateY(-4px);
+  z-index: 30;
+}
+.poster .poster-img {
+  border-radius: 10px; overflow: hidden;
+  box-shadow: 0 4px 14px -6px rgba(0,0,0,.7);
+  transition: box-shadow .22s ease, outline-color .15s ease;
+  outline: 1px solid rgba(255,255,255,.06); outline-offset: -1px;
+}
+.poster:hover .poster-img {
+  box-shadow: 0 18px 44px -10px rgba(0,0,0,.9),
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent),
+    0 0 26px -4px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+/* Tendina scura + play centrale all'hover, stile Netflix */
+.poster .poster-veil {
+  position: absolute; inset: 0; border-radius: 10px;
+  background: linear-gradient(to top, rgba(0,0,0,.82) 0%, rgba(0,0,0,.25) 45%, transparent 70%);
+  opacity: 0; transition: opacity .2s ease;
+  display: flex; align-items: flex-end; justify-content: center; padding-bottom: 12px;
+}
+.poster:hover .poster-veil { opacity: 1; }
+
+/* Frecce di scorrimento della shelf: appaiono solo all'hover sulla riga */
+.shelf-wrap { position: relative; }
+.shelf-arrow {
+  position: absolute; top: 0; bottom: 14px; width: 44px; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(to right, rgba(10,10,11,.85), transparent);
+  opacity: 0; transition: opacity .18s ease; border: none; cursor: pointer;
+  color: var(--color-txt);
+}
+.shelf-arrow.right { right: 0; background: linear-gradient(to left, rgba(10,10,11,.85), transparent); }
+.shelf-arrow.left { left: 0; }
+.shelf-wrap:hover .shelf-arrow { opacity: 1; }
+.shelf-arrow:hover { color: var(--color-accent); }
+.shelf-arrow:disabled { opacity: 0 !important; }
+
+/* Hero cinematografico: backdrop sfumato ai bordi, come la locandina Netflix */
+.hero {
+  position: relative; border-radius: 18px; overflow: hidden;
+  min-height: 340px; display: flex; align-items: flex-end;
+  box-shadow: 0 24px 60px -20px rgba(0,0,0,.85);
+}
+.hero-bg { position: absolute; inset: -8%; background-size: cover; background-position: center 30%; filter: blur(2px) brightness(.55) saturate(1.1); transform: scale(1.05); animation: hero-bg-in .7s ease both; }
+@keyframes hero-bg-in { from { opacity: 0; } to { opacity: 1; } }
+.hero-fade {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(to top, rgba(10,10,11,.96) 4%, rgba(10,10,11,.55) 42%, rgba(10,10,11,.15) 75%),
+    linear-gradient(100deg, rgba(10,10,11,.85) 0%, transparent 55%);
+}
+/* Titolo hero con ombra leggibile + alone neon */
+.hero-title { text-shadow: 0 2px 20px rgba(0,0,0,.9), 0 1px 4px rgba(0,0,0,.8), 0 0 34px color-mix(in srgb, var(--color-accent) 35%, transparent); }
+
+/* Pulsanti hero stile Netflix: Riproduci pieno + secondario vetro */
+.btn-hero {
+  display: inline-flex; align-items: center; gap: 10px; font-weight: 700;
+  padding: 10px 26px; border-radius: 8px; font-size: 15px;
+  white-space: nowrap;
+  transition: transform .15s ease, background .15s ease, box-shadow .15s ease;
+}
+@media (max-width: 767px) {
+  .hero { min-height: 250px; }
+  .btn-hero { padding: 8px 16px; font-size: 13px; gap: 7px; }
+}
+.btn-hero:active { transform: scale(.96); }
+.btn-hero-play {
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent2));
+  color: #fff; box-shadow: 0 8px 26px -8px color-mix(in srgb, var(--color-accent) 50%, transparent);
+}
+.btn-hero-play:hover { transform: scale(1.04); filter: brightness(1.1); }
+.btn-hero-ghost { background: rgba(109,109,110,.35); color: #fff; backdrop-filter: blur(8px); }
+.btn-hero-ghost:hover { background: rgba(109,109,110,.5); }
+.rank-badge {
+  font-weight: 900; font-style: italic; color: var(--color-accent);
+  text-shadow: 0 2px 12px rgba(0,0,0,.8);
+}
