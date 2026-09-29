@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, shell, dialog, globalShortcut, net, Tray, Menu, nativeImage, ipcMain } from 'electron';
+import { app, BrowserWindow, protocol, shell, dialog, globalShortcut, net, Tray, Menu, nativeImage, ipcMain, powerMonitor } from 'electron';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 import { initDb } from './db';
@@ -8,7 +8,7 @@ import { setNotifier } from './services/downloader';
 import { setBurnNotifier, isBurning } from './services/burner';
 import { maybeUpdateYtDlp } from './services/updater';
 import { getTrack } from './services/library';
-import { startRemoteServer, restartRemoteServer, remoteBroadcast, registerRemoteInfoHandler, updateDirs } from './remote';
+import { startRemoteServer, restartRemoteServer, remoteBroadcast, registerRemoteInfoHandler, updateDirs, applyKeepAwake } from './remote';
 import { setPairNotifier } from './pairing';
 import { setPlayerStateListener, setHandlersNotifier, setApkInfoProvider } from './handlers';
 import { restoreQueue } from './services/downloader';
@@ -177,8 +177,17 @@ app.whenReady().then(() => {
     try { app.setLoginItemSettings({ openAtLogin: getSettings().autostart !== false }); } catch { /* */ }
   };
   applyAutostart();
+  // Sospensione del PC: socket HTTP e discovery UDP non sopravvivono al sonno
+  // (e l'IP può essere cambiato) → riavvio completo del server remoto; i client
+  // SSE morti si chiudono alla prossima write/qui con close(). Con keepAwake
+  // attivo (default) questa strada è quasi mai percorsa: è la rete di
+  // sicurezza per batteria scarica, sospensione forzata, keepAwake spento.
+  powerMonitor.on('resume', () => {
+    if (getSettings().remoteEnabled) restartRemoteServer();
+  });
   setSettingsChangedHook((p) => {
     if ('remoteEnabled' in p || 'remotePort' in p || 'remoteToken' in p) restartRemoteServer();
+    if ('keepAwake' in p) applyKeepAwake(); // toggle keep-awake senza restart del server
     if ('autostart' in p) applyAutostart();
     if ('updateUrl' in p || ('autoUpdateApp' in p && p.autoUpdateApp)) void checkAppUpdate();
     // Scritture interne (cambio profilo, fallback dopo deleteUser, ecc.) non

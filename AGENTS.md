@@ -589,6 +589,14 @@
   MulticastLock — molti driver Wi-Fi filtrano i broadcast senza lock) notifica
   `found {host,port,name}` → ConnectGate mostra il PC trovato. Il pacchetto NON
   contiene il token (un annuncio falsificato porta solo a un handshake fallito).
+- **Keep-awake** (`applyKeepAwake` in remote.ts): pref `keepAwake` (default ON,
+  desktop-only in DESKTOP_ONLY_SETTINGS) → mentre il server remoto è attivo
+  `powerSaveBlocker.start('prevent-app-suspension')` — OS+rete svegli, schermo
+  libero di spegnersi (un server non ha bisogno del display). Rilasciato su
+  stop/errore bind/toggle off. `powerMonitor.on('resume')` →
+  `restartRemoteServer()`: socket HTTP e discovery UDP non sopravvivono al
+  sonno e l'IP può cambiare; è la rete di sicurezza per sospensione forzata,
+  batteria o keepAwake spento.
 - **Finestra "Accoppia telefono"** (`src/main/pairing.ts`, puro/testato):
   `POST /pair` è l'UNICA route senza token; consegna `{t: token}` solo se la
   finestra è aperta (90s, da Impostazioni → Telefono o `pairing:open` via

@@ -864,6 +864,11 @@ export default function Settings() {
             <Toggle v={s.remoteEnabled} onChange={async (v) => { await save({ remoteEnabled: v }); loadRemote(); }} />
           </Row>
         )}
+        {!isRemote() && s.remoteEnabled && (
+          <Row label="Mantieni il PC sveglio" sub="Mentre il server è attivo il PC non va in sospensione (lo schermo può spegnersi) — il telefono trova sempre casa">
+            <Toggle v={s.keepAwake !== false} onChange={(v) => save({ keepAwake: v })} />
+          </Row>
+        )}
         {/* Pairing guidato: il telefono scopre il PC da solo (broadcast UDP)
             e il codice gli viene consegnato da /pair solo dentro questa
             finestra — l'utente medio non digita nulla */}

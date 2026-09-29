@@ -7,6 +7,7 @@
 export const DESKTOP_ONLY_SETTINGS = [
   'updateUrl', 'autoUpdateApp', 'libraryDir', 'currentUser',
   'remoteEnabled', 'remotePort', 'remoteToken', 'autostart',
+  'keepAwake', // tocca lo stato fisico del PC: un device remoto non decide la sospensione
 ] as const;
 
 // Credenziali che non devono MAI lasciare il PC via API remota: remoteToken è

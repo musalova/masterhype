@@ -22,6 +22,7 @@ const defaults = (): Settings => ({
   remoteEnabled: true,
   remoteToken: '',
   remotePort: 48484,
+  keepAwake: true, // il PC è il server di casa: non deve dormire mentre serve
   autostart: true, // il telefono dipende dal server del PC: avvia con Windows
   currentUser: 1,  // profilo attivo sul PC (creato dalla migrazione in db.ts)
   updateUrl: '',   // feed aggiornamenti (EXE + APK): vuoto = DEFAULT_UPDATE_FEED

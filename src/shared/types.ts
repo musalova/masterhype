@@ -181,6 +181,7 @@ export interface Settings {
   remoteEnabled: boolean; // server LAN per telefono/tablet
   remoteToken: string;    // codice di pairing (generato automaticamente)
   remotePort: number;     // porta del server LAN
+  keepAwake: boolean;     // il PC non va in sospensione mentre il server remoto è attivo
   autostart: boolean;     // avvia con Windows: il server resta raggiungibile dal telefono
   currentUser: number;    // profilo attivo sul PC (i dispositivi remoti scelgono il loro)
   updateUrl: string;      // feed pubblico aggiornamenti (EXE + APK) — '' = nessuno

@@ -2,7 +2,7 @@ import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http
 import { networkInterfaces } from 'node:os';
 import { existsSync, statSync, createReadStream, createWriteStream, mkdirSync, unlinkSync } from 'node:fs';
 import { join, extname, normalize, dirname } from 'node:path';
-import { app } from 'electron';
+import { app, powerSaveBlocker } from 'electron';
 import { handlers } from './handlers';
 import { getSettings } from './settings';
 import { getTrack } from './services/library';
@@ -458,6 +458,23 @@ function readBody(req: IncomingMessage): Promise<{ c?: string; a?: unknown[]; k?
   });
 }
 
+// --- Keep-awake: il PC è il server di casa — se va in sospensione muore
+// tutto (:48484, discovery, code in volo) e il telefono ripiega offline.
+// prevent-app-suspension tiene svegli OS+rete ma lascia spegnere lo schermo
+// (è un server, non un playback: non serve prevent-display-sleep). ---
+let keepAwakeId: number | null = null;
+
+// Attivo solo mentre il server è su e la pref lo vuole — chiamato da
+// start/stop e dall'hook settings (toggle 'keepAwake' senza restart).
+export function applyKeepAwake(): void {
+  const s = getSettings();
+  const want = !!s.remoteEnabled && s.keepAwake !== false && !!server;
+  try {
+    if (want && keepAwakeId == null) keepAwakeId = powerSaveBlocker.start('prevent-app-suspension');
+    else if (!want && keepAwakeId != null) { powerSaveBlocker.stop(keepAwakeId); keepAwakeId = null; }
+  } catch { /* */ }
+}
+
 export function startRemoteServer(): void {
   const s = getSettings();
   if (!s.remoteEnabled || server) return;
@@ -549,9 +566,11 @@ export function startRemoteServer(): void {
   });
   server.on('error', (e) => {
     server = null; // porta occupata: il remoto si spegne, l'app resta
+    applyKeepAwake();
     report('generic', { message: `server remoto non avviato (${port}): ${e.message}` });
   });
   server.listen(port, '0.0.0.0');
+  applyKeepAwake();
   // il telefono trova il PC senza digitare l'indirizzo (broadcast UDP :48485)
   startDiscovery(
     () => getSettings().remotePort ?? 48484,
@@ -563,6 +582,7 @@ export function stopRemoteServer(): void {
   stopDiscovery();
   try { server?.close(); } catch { /* */ }
   server = null;
+  applyKeepAwake(); // server null → rilascia il blocker
   for (const res of sseClients.keys()) { try { res.end(); } catch { /* */ } }
   sseClients.clear();
 }
