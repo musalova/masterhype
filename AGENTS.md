@@ -100,6 +100,9 @@
   (slimline senza subcanali R-W). Sense 02/04/08 = drive in long-write post-cue abortito -> attesa. Ricompilare:
   `csc -target:exe -platform:anycpu -optimize+ -out:resources\bin\BurnHelper.exe tools\BurnHelper.cs`
 - `resources/bin/` — yt-dlp.exe, ffmpeg.exe, ffprobe.exe, BurnHelper.exe
+  (`services/updater.ts` auto-aggiorna yt-dlp 1×/die in userData/bin:
+  verifica l'hash in `SHA2-256SUMS` della release PRIMA di installare —
+  download corrotto/CDN manomesso → update saltato, mai exe non verificato)
 
 ## Multi-utente (profili)
 
