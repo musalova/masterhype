@@ -1,4 +1,5 @@
 import type { TrackRef, AlbumRef, ArtistRef, PlaylistRef, TopResult, SearchResult } from './types';
+import { normText } from './taste';
 
 // Parsing difensivo delle risposte InnerTube (YouTube Music). Condiviso tra
 // main (ytmusic.ts) e renderer (direct.ts): gli item cambiano forma tra
@@ -433,8 +434,7 @@ export function searchSuggestions(raw: any): string[] {
 
 // Normalizzazione per il confronto artista/titolo usata nell'auto-riparazione
 // degli stream (condivisa: downloader.ts sul PC, direct.ts sul telefono).
-export const normTxt = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-  .replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+export const normTxt = normText;
 
 // Match stretto per Audius: il catalogo è piccolo/indie e una risposta "quasi
 // giusta" suonerebbe un brano sbagliato — peggio di un fallimento onesto.

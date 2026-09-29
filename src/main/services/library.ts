@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import type { LibraryTrack, Playlist, AppStats, RemoteLike, TrackRef } from '../../shared/types';
+import { signalWeight, TAG_SPILL } from '../../shared/taste';
 import { existsSync, copyFileSync, mkdirSync } from 'fs';
 import { basename, extname, join } from 'path';
 import { createHash } from 'crypto';
@@ -207,13 +208,13 @@ export function recordEvent(
     .run(trackId, artist, type, meta?.title ?? null, meta?.videoId ?? null, meta?.thumbnail ?? null, Date.now(), u);
   // Contesto (ora/giorno) + co-occorrenza artisti nella stessa sessione
   void import('./engine').then((e) => e.enrichEvent(res.lastInsertRowid, type, artist, u)).catch(() => {});
-  const weight = { like: 3, download: 2.5, burn: 2, play: 1, skip: -1, hide: -2, unlike: -3 }[type] ?? 0;
+  const weight = signalWeight(type);
   if (artist && weight !== 0) {
     bumpTaste('artist', artist, weight, u);
     // Deduzione dei generi: i tag Last.fm dell'artista seguono lo stesso segnale
     // (like a Vasco → cresce "italian rock" → gli affini salgono nei suggerimenti).
     const a = artist;
-    const d = weight * 0.35;
+    const d = weight * TAG_SPILL;
     void import('./sources').then((s) => s.lastfmArtistTags(a))
       .then((tags) => { for (const t of tags.slice(0, 3)) bumpTaste('tag', t, d, u); })
       .catch(() => { /* tag opzionali */ });
@@ -230,7 +231,7 @@ export function bumpTaste(kind: 'artist' | 'genre' | 'tag', value: string, delta
   // I pesi possono scendere sotto zero: un artista "disliked" viene penalizzato nei suggerimenti.
   db.prepare(`INSERT INTO taste_profile (kind,value,weight,updated_at,user_id) VALUES (?,?,?,?,?)
     ON CONFLICT(kind,value,user_id) DO UPDATE SET weight = weight + excluded.weight, updated_at = excluded.updated_at`)
-    .run(kind, value.toLowerCase(), delta, Date.now(), u);
+    .run(kind, value.trim().toLowerCase(), delta, Date.now(), u);
 }
 
 // Brani da non riproporre: più skip/hide che play = l'utente li salta di proposito.

@@ -11,6 +11,7 @@
 
 import { getDb } from '../db';
 import { bumpTaste, tasteProfile } from './library';
+import { normText, LISTEN_COMPLETE_WEIGHT, listenClass } from '../../shared/taste';
 import { charts } from './ytmusic';
 import { deezerChart, deezerArtistTop } from './sources';
 import { getSettings } from '../settings';
@@ -19,8 +20,9 @@ import type { OnboardArtist } from '../../shared/types';
 const SESSION_MS = 30 * 60_000; // due play entro 30' = stessa sessione
 const HALF_LIFE_DAYS = 40;
 
-export const normArtist = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-  .replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+// Normalizzatore artisti = shared/taste.normText (unica fonte: stessa funzione
+// usata dal renderer — parità strutturale, non più copia a mano).
+export const normArtist = normText;
 
 // ---- Contesto + co-occorrenza: chiamati da library.recordEvent ----
 
@@ -56,10 +58,7 @@ export interface ListenReport {
 // <25% con meno di 30s = già coperto dallo 'skip' del renderer: qui si ignora.
 export function recordListen(r: ListenReport, u: number): void {
   const dur = r.durationS && r.durationS > 0 ? r.durationS : undefined;
-  const ratio = dur ? r.playedS / dur : (r.playedS >= 240 ? 1 : 0);
-  let type: 'complete' | 'partial' | null = null;
-  if (ratio >= 0.85 || r.playedS >= 240) type = 'complete';
-  else if (ratio >= 0.25 && r.playedS >= 30) type = 'partial';
+  const type = listenClass(r.playedS, dur);
   if (!type) return;
   const db = getDb();
   const res = db.prepare(
@@ -68,7 +67,7 @@ export function recordListen(r: ListenReport, u: number): void {
     .run(r.trackId ?? null, r.artist, type, r.title ?? null, r.videoId ?? null, r.thumbnail ?? null, Date.now(), u,
       Math.round(r.playedS), dur ?? null);
   enrichEvent(res.lastInsertRowid, type, r.artist, u);
-  if (type === 'complete') bumpTaste('artist', r.artist, 1.2, u);
+  if (type === 'complete') bumpTaste('artist', r.artist, LISTEN_COMPLETE_WEIGHT, u);
 }
 
 // ---- Contesto orario: cosa ascolti di solito a quest'ora ----

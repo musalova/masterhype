@@ -1,5 +1,22 @@
 # MasterHype — note per agenti
 
+## Git / CI
+
+- Repo pubblico `github.com/musalova/masterhype`, branch `main`, remote `origin`
+  già configurato. Commit con identità `-c user.name=musalova
+  -c user.email=musalova@users.noreply.github.com` (nessun user.name globale
+  configurato sulla macchina). Push: PAT in env `GH_TOKEN` (scope
+  `public_repo` — NON può pushare file sotto `.github/workflows/`: serve lo
+  scope `workflow` oppure crearli dalla UI web GitHub).
+- NON in git (vedi `.gitignore`): `resources/bin/*.exe` (yt-dlp/ffmpeg/
+  ffprobe/BurnHelper — ffmpeg+ffprobe >100MB file, oltre il limite GitHub;
+  fonti in README), `android/keystore.properties` + `android/keystore/`
+  (PASSWORD DI FIRMA IN CHIARO — esposte, chiunque pubblica APK come noi),
+  `release/`, `out/`, `build/apk/`.
+- CI: `.github/workflows/ci.yml` (windows-latest): `npm ci` → `tsc --noEmit`
+  → `vitest run` → `electron-vite build`; job parallelo `android-compile`
+  (JDK 21 temurin + `gradlew :app:compileReleaseJavaWithJavac`).
+
 ## Comandi
 
 - `npm run dev` — avvia in sviluppo (rimuove `ELECTRON_RUN_AS_NODE` via `scripts/run.mjs`)
@@ -44,6 +61,15 @@
 ## Architettura
 
 - `src/shared/types.ts` — tipi + canali IPC (fonte di verità dei contratti)
+- `src/shared/taste.ts` — UNICA fonte per normalizzatori (`normText`/`normTag`),
+  chiavi brano (`trackKey` esatta / `trackBaseKey` fuzzy), `baseTitleOf`, pesi
+  segnali (`signalWeight`) e classificazione ascolti (`listenClass`/
+  `listenTasteWeight`). Importato da main (engine/library/recommend/telemetry)
+  E renderer (localData/offlineRec/store) + ytparse: la parità PC↔telefono è
+  strutturale. MAI ricopiare una regex di normalizzazione altrove — i test
+  golden in `tests/taste-parity.test.ts` bloccano derive su entrambi i lati.
+  `localData.trackBaseKey`/`engine.normArtist`/`ytparse.normTxt` sono alias di
+  compatibilità verso il condiviso.
 - `src/main/` — processo main Electron: `db.ts` (node:sqlite), `settings.ts`, `ipc.ts`, `services/`
 - `src/main/services/` — `ytmusic.ts` (youtubei.js), `downloader.ts` (yt-dlp+ffmpeg), `library.ts`,
   `sources.ts` (Deezer/Last.fm/Spotify), `recommend.ts` (scoring+assistente), `trends.ts`, `burner.ts`

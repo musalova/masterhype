@@ -5,11 +5,11 @@
 
 import { getDb } from '../db';
 import type { IssueStats } from '../../shared/types';
+import { normText } from '../../shared/taste';
 
 const MAX_ISSUES = 600; // rotazione: oltre questa soglia si buttano i più vecchi
 
-export const normKey = (s: string) =>
-  s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+export const normKey = normText;
 
 export interface IssueData {
   message?: string;

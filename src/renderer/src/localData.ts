@@ -1,4 +1,5 @@
 import type { AppStats, LibraryTrack, Playlist, TrackRef } from '../../shared/types';
+import { signalWeight, listenTasteWeight, trackBaseKey } from '../../shared/taste';
 import { myUserId } from './remote';
 import { phoneIndex, phoneVidId } from './phoneLocal';
 import type { PendingPlOp } from './pendingSync';
@@ -135,8 +136,8 @@ export function overlayPlaylists(base: Playlist[] | null | undefined): Playlist[
 }
 
 // ---- Segnali locali (coda eventi/ascolti/like) → gusti, recenti, stats ----
-interface Ev { artist?: string; title?: string; videoId?: string; thumbnail?: string; type?: string; ts?: number; trackId?: number }
-const WEIGHT: Record<string, number> = { like: 3, play: 1, skip: -1, hide: -2, unlike: -3, listen: 0.5 };
+// Pesi e chiavi: shared/taste.ts — la stessa tabella di recordEvent (PC).
+interface Ev { artist?: string; title?: string; videoId?: string; thumbnail?: string; type?: string; ts?: number; trackId?: number; playedS?: number; durationS?: number }
 
 type TasteRow = { kind: string; value: string; weight: number };
 
@@ -159,11 +160,13 @@ export function localTaste(kind?: string, signalsOnly = false): TasteRow[] {
     if (a && !a.startsWith('[object')) w.set(a, (w.get(a) ?? 0) + d);
   };
   const after = (x: { ts?: number }) => (x.ts ?? 0) > resetTs;
-  for (const e of readJson<Ev[]>(`mh-pending-events:u${u}`, []).filter(after)) bump(e.artist, WEIGHT[e.type ?? ''] ?? 0);
-  for (const e of readJson<Ev[]>(`mh-pending-listen:u${u}`, []).filter(after)) bump(e.artist, WEIGHT.listen);
-  for (const l of readJson<{ liked: boolean; t?: TrackRef; ts?: number }[]>(`mh-pending-likes:u${u}`, []).filter(after)) bump(l.t?.artist, l.liked ? WEIGHT.like : WEIGHT.unlike);
+  for (const e of readJson<Ev[]>(`mh-pending-events:u${u}`, []).filter(after)) bump(e.artist, signalWeight(e.type ?? ''));
+  // Completamenti: stessa regola del PC — +1.2 solo se ≥85% (o ≥4 min), i
+  // parziali contano come evento ma non muovono i gusti.
+  for (const e of readJson<Ev[]>(`mh-pending-listen:u${u}`, []).filter(after)) bump(e.artist, listenTasteWeight(e.playedS ?? 0, e.durationS));
+  for (const l of readJson<{ liked: boolean; t?: TrackRef; ts?: number }[]>(`mh-pending-likes:u${u}`, []).filter(after)) bump(l.t?.artist, signalWeight(l.liked ? 'like' : 'unlike'));
   const lib = signalsOnly || resetTs ? [] : knownLibrary();
-  for (const t of lib) { if (t.liked) bump(t.artist, WEIGHT.like); if (t.playCount) bump(t.artist, Math.min(5, t.playCount * 0.3)); }
+  for (const t of lib) { if (t.liked) bump(t.artist, signalWeight('like')); if (t.playCount) bump(t.artist, Math.min(5, t.playCount * 0.3)); }
   const artists = [...w.entries()].map(([value, weight]) => ({ kind: 'artist', value, weight }));
   const g = new Map<string, number>();
   for (const t of lib) if (t.genre) g.set(t.genre.toLowerCase(), (g.get(t.genre.toLowerCase()) ?? 0) + 1 + (t.liked ? 2 : 0));
@@ -188,14 +191,8 @@ export function mergeTaste(base: TasteRow[] | null | undefined, kind?: string): 
 // Chiavi "artista|titolo-base" dei brani con segnale negativo offline
 // (skip/hide/unlike): le stazioni locali li escludono come fa il PC col
 // filtro cinico — uno skip "Song" copre anche "Song (Remastered)".
-const baseTitle = (t: string) => (t ?? '').toLowerCase()
-  .replace(/\s*[\(\[][^)\]]*[\)\]]/g, ' ')
-  .replace(/\s+-\s+(?:remaster(?:ed)?|live|remix|acoustic|deluxe|mono|stereo|radio edit|single version|edit|version)\b.*$/i, ' ')
-  .replace(/[^a-z0-9àèéìòù ]/g, '').replace(/\s+/g, ' ').trim();
-
-// Chiave canonica "artista|titolo-base" — la stessa usata da localSkipKeys.
-export const trackBaseKey = (artist: string, title: string): string =>
-  `${(artist ?? '').trim().toLowerCase()}|${baseTitle(title)}`;
+// La chiave è shared/taste.trackBaseKey — identica al server.
+export { trackBaseKey };
 
 export function localSkipKeys(): Set<string> {
   const u = myUserId();

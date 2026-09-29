@@ -7,6 +7,7 @@ import { getDb } from '../db';
 import { mapLimit } from './util';
 import type { TrackRef, SuggestedTrack, AssistantRequest, AssistantResult } from '../../shared/types';
 import { STATIONS } from '../../shared/types';
+import { normText as norm, normTag, trackKey as key, baseTitleOf as baseTitle, trackBaseKey as baseKey } from '../../shared/taste';
 
 // Motore raccomandazione offline: aggrega candidati da più fonti e li pesa
 // contro il profilo gusti memorizzato (artisti/generi/tag).
@@ -23,24 +24,8 @@ interface Candidate {
   rank?: number;  // posizione nella fonte originale (chart/query), 0-based
 }
 
-const norm = (s: string) => s.toLowerCase()
-  .normalize('NFD').replace(/[̀-ͯ]/g, '') // combining diacritics U+0300-U+036F
-  .replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-const key = (a: string, t: string) => `${norm(a)}|${norm(t)}`;
-
-// Titolo "base" per filtri e dedup: "(feat. X)", "[Live]", "- Remaster 2011"
-// non devono produrre una chiave diversa per lo stesso brano — uno skip su
-// "Song" deve coprire anche "Song (Remastered)" e "Song - Live".
-const baseTitle = (t: string) => norm(
-  t.replace(/\s*[\(\[][^)\]]*[\)\]]/g, ' ')
-    .replace(/\s+-\s+(?:remaster(?:ed)?|live|remix|acoustic|deluxe|mono|stereo|radio edit|single version|edit|version)\b.*$/i, ' '));
-const baseKey = (a: string, t: string) => `${norm(a)}|${baseTitle(t)}`;
-
-// Tag/genere → forma confrontabile: separatori e punteggiatura diventano
-// spazi ("Hip-Hop" ID3 = "hip hop" Last.fm, "R&B" = "r b").
-const normTag = (s: string) => s.toLowerCase()
-  .normalize('NFD').replace(/[̀-ͯ]/g, '')
-  .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+// Normalizzatori e chiavi brano: fonte unica in shared/taste.ts — il renderer
+// (localData/offlineRec) usa le STESSE funzioni, la parità è strutturale.
 
 // taste_profile memorizza il valore solo in lowercase, ma i lookup usano
 // norm()/normTag(): senza normalizzazione "AC/DC" o "Måneskin" non trovavano

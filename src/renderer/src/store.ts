@@ -6,6 +6,7 @@ import { loadPref, savePref, migratePrefs, syncPrefs, clearLocalPrefs, pushDirty
 import { queueRemoteLike, queueLibLike, queueEvent, queueSearchPick, queueListen, queueDownload, pendingLikesMap, pendingLikeEntries } from './pendingSync';
 import { cachedAuto, cacheAuto, offlineStation, offlineRadio } from './offlineRec';
 import { phoneReconcile, phoneIndex, phoneIndexPut, phoneIndexDel, phonePut, phoneDel, phoneInvalidate, phoneVidId, phoneMigrateId, phoneEvictOldest, phoneFreeMB } from './phoneLocal';
+import { trackKey } from '../../shared/taste';
 
 // Chiavi legacy → mh-pref-*: entrano nello store condiviso PC↔telefono
 migratePrefs({
@@ -222,8 +223,8 @@ const savedScreen = (): Screen => {
   return SCREENS.includes(s) ? s : 'home';
 };
 // Dedup "stessa canzone" anche con videoId diversi (remaster, topic channel, ecc.)
-const normKey = (t: { artist: string; title: string }) => `${t.artist}|${t.title}`
-  .toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+// — stessa chiave esatta del server (shared/taste.trackKey: NFD+punteggiatura).
+const normKey = (t: { artist: string; title: string }) => trackKey(t.artist, t.title);
 
 export const useApp = create<AppState>((set, get) => ({
   screen: savedScreen(),

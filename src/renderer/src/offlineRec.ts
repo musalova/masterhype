@@ -2,6 +2,7 @@ import { STATIONS } from '../../shared/types';
 import type { AssistantRequest, AssistantResult, LibraryTrack, RemoteLike, SuggestedTrack, TrackRef, TrendItem } from '../../shared/types';
 import { myUserId, isStandalone } from './remote';
 import { localTaste, localSkipKeys, trackBaseKey } from './localData';
+import { normText, trackKey } from '../../shared/taste';
 
 // Approssimazioni locali delle funzioni "taste" che normalmente calcola il PC
 // (suggest, autoplaylist, stazioni, radio, assistente, trends). Con il PC spento
@@ -47,7 +48,7 @@ const shuffle = <T,>(a: T[]): T[] => {
 const dedupe = (list: TrackRef[]): TrackRef[] => {
   const seen = new Set<string>();
   return list.filter((t) => {
-    const k = t.videoId ?? `${t.artist}|${t.title}`.toLowerCase();
+    const k = t.videoId ?? trackKey(t.artist, t.title);
     if (!k || seen.has(k)) return false;
     seen.add(k); return true;
   });
@@ -73,23 +74,20 @@ const ownedVids = (library: LibraryTrack[]) => new Set(library.map((t) => t.vide
 // ---- Gusti locali: stessa logica del TasteCtx del PC, fonti offline ----
 // Pesi artista da localTaste (like/play negativi inclusi), artisti "bloccati"
 // con match fuzzy (collaborazioni e alias non aggirano un dislike), brani
-// skippati/nascosti su titolo base.
-const normA = (s: string) => (s ?? '').toLowerCase()
-  .normalize('NFD').replace(/[̀-ͯ]/g, '')
-  .replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+// skippati/nascosti su titolo base. Normalizzatori: shared/taste (parità PC).
 
 interface LocalTaste { w: Map<string, number>; max: number; blocked: string[]; neg: Set<string> }
 function tasteSnapshot(): LocalTaste {
   const rows = localTaste('artist');
   return {
-    w: new Map(rows.map((r) => [normA(r.value), r.weight])),
+    w: new Map(rows.map((r) => [normText(r.value), r.weight])),
     max: Math.max(1, ...rows.map((r) => Math.max(0, r.weight))),
-    blocked: rows.filter((r) => r.weight < 0).map((r) => normA(r.value)),
+    blocked: rows.filter((r) => r.weight < 0).map((r) => normText(r.value)),
     neg: localSkipKeys(),
   };
 }
 const blockedLocal = (t: LocalTaste, artist: string): boolean => {
-  const a = normA(artist);
+  const a = normText(artist);
   return !!a && t.blocked.some((b) => b.length >= 3 && (a === b || a.includes(b) || b.includes(a)));
 };
 
@@ -100,7 +98,7 @@ function tasteOrder(list: TrackRef[]): TrackRef[] {
   const n = Math.max(1, list.length);
   return dedupe(list)
     .filter((x) => !blockedLocal(t, x.artist) && !t.neg.has(trackBaseKey(x.artist, x.title)))
-    .map((x, i) => ({ x, s: ((t.w.get(normA(x.artist)) ?? 0) / t.max) * 1.2 + (1 - i / n) * 0.3 }))
+    .map((x, i) => ({ x, s: ((t.w.get(normText(x.artist)) ?? 0) / t.max) * 1.2 + (1 - i / n) * 0.3 }))
     .sort((a, b) => b.s - a.s)
     .map((x) => x.x);
 }
@@ -183,10 +181,10 @@ export async function offlineStation(id: string, library: LibraryTrack[], remote
 export async function offlineRadio(kind: 'artist' | 'genre', value: string): Promise<TrackRef[]> {
   if (kind === 'genre') return tasteOrder(await searchPool(`${value} hits`)).slice(0, 40);
   const found = await searchPool(value);
-  const v = normA(value);
+  const v = normText(value);
   // Il seed tiene ~1/3 della scaletta (parità col PC), interlacciato coi
   // correlati ordinati sui gusti locali.
-  const seed = found.filter((t) => { const a = normA(t.artist ?? ''); return a === v || a.includes(v) || v.includes(a); });
+  const seed = found.filter((t) => { const a = normText(t.artist ?? ''); return a === v || a.includes(v) || v.includes(a); });
   const rest = tasteOrder(dedupe([...(await upNextPool(seed.length ? seed : found, 1)), ...found]))
     .filter((t) => !seed.some((s) => s.videoId === t.videoId));
   const out: TrackRef[] = [];
@@ -207,11 +205,11 @@ export async function offlineContinue(videoId: string, artist: string, ctx?: str
   const ups = await directUpNext(videoId).catch(() => [] as TrackRef[]);
   if (!ups.length) return [];
   const ordered = tasteOrder(ups);
-  const seedArtist = ctx?.startsWith('radio:artist:') ? normA(ctx.slice(13)) : '';
+  const seedArtist = ctx?.startsWith('radio:artist:') ? normText(ctx.slice(13)) : '';
   if (!seedArtist) return ordered.slice(0, 15);
   // Il seme resta presente durante la continuazione (salgono i suoi brani)
   return ordered
-    .map((x) => ({ x, boost: artist && normA(x.artist) === seedArtist ? 1 : 0 }))
+    .map((x) => ({ x, boost: artist && normText(x.artist) === seedArtist ? 1 : 0 }))
     .sort((a, b) => b.boost - a.boost)
     .map((y) => y.x)
     .slice(0, 15);

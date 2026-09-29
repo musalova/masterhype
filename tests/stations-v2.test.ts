@@ -5,13 +5,10 @@ import { describe, it, expect } from 'vitest';
 // come specchio: se la logica di produzione cambia, questi test la bloccano.
 
 // ---- specchio recommend.ts ----
-const norm = (s: string) => s.toLowerCase()
-  .normalize('NFD').replace(/[̀-ͯ]/g, '')
-  .replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-const baseTitle = (t: string) => norm(
-  t.replace(/\s*[\(\[][^)\]]*[\)\]]/g, ' ')
-    .replace(/\s+-\s+(?:remaster(?:ed)?|live|remix|acoustic|deluxe|mono|stereo|radio edit|single version|edit|version)\b.*$/i, ' '));
-const baseKey = (a: string, t: string) => `${norm(a)}|${baseTitle(t)}`;
+// Prima questo test copiava le regex di produzione "a specchio": ora le
+// funzioni sono in shared/taste.ts — fonte unica PC+telefono. I vettori
+// golden sotto bloccano comunque i comportamenti (niente derive silenziose).
+import { normText as norm, baseTitleOf as baseTitle, trackBaseKey as baseKey } from '../src/shared/taste';
 
 const artistBlocked = (blocked: string[], artist: string): boolean => {
   const a = norm(artist);
