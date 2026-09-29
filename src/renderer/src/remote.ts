@@ -8,6 +8,7 @@ import {
   directLyrics, directUpNext, directCharts, directAlbumTracks, directArtistTop,
   directArtistPage, directPlaylistTracks,
 } from './direct';
+import { enqueueIssue } from './fieldDiag';
 
 // Client remoto: su telefono/tablet (browser o app Android) non esiste
 // window.masterhype — la stessa identica UI parla col PC via HTTP.
@@ -1141,7 +1142,13 @@ export const remoteApi: MasterHypeApi = {
       return saveTextFile('masterhype-report.txt', `${pc || `PC non raggiungibile (${pcGone()})`}\n${dev}`, 'text/plain');
     },
     reportText: () => call(IPC.issuesReportText),
-    report: (k, d) => call(IPC.issuesReport, k, d),
+    // Report fallito per rete giù → va in coda mh-pending-issues e risale al
+    // reconnect (drainFieldDiag); errore applicativo a PC vivo → non si accoda.
+    report: (k, d) => call<void>(IPC.issuesReport, k, d).catch((e) => {
+      if (!isOnline()) enqueueIssue(k, d);
+      throw e;
+    }),
+    streamStats: (rows) => call<void>(IPC.streamStats, rows),
     track: (n) => (isOnline() ? call<void>(IPC.uxTrack, n).catch(() => {}) : Promise.resolve()),
   },
   backup: {

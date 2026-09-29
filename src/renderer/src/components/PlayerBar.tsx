@@ -168,10 +168,10 @@ export default function PlayerBar() {
   // artista dice cosa sta succedendo ("riparo il brano…") e un chip ambra
   // segnala quando BotGuard è morto e gli stream possono interrompersi.
   const [streamPhase, setStreamPhase] = useState('');
-  const [potWarn, setPotWarn] = useState(false);
+  const [streamWarn, setStreamWarn] = useState(''); // 'potoken' | 'cascade' | ''
   useEffect(() => {
     const onPhase = (e: Event) => setStreamPhase(String((e as CustomEvent).detail ?? ''));
-    const onWarn = (e: Event) => setPotWarn(String((e as CustomEvent).detail ?? '') === 'potoken');
+    const onWarn = (e: Event) => setStreamWarn(String((e as CustomEvent).detail ?? ''));
     window.addEventListener('mh-stream-phase', onPhase);
     window.addEventListener('mh-stream-warn', onWarn);
     return () => { window.removeEventListener('mh-stream-phase', onPhase); window.removeEventListener('mh-stream-warn', onWarn); };
@@ -768,9 +768,11 @@ export default function PlayerBar() {
 
       <div className="w-64 flex items-center justify-end gap-2 max-md:w-auto">
         {loading && <div className="eq"><i /><i /><i /><i /></div>}
-        {potWarn && (
+        {streamWarn && (
           <span className="text-[10px] font-medium text-amber-400/90 whitespace-nowrap"
-            title="Protezione anti-bot di YouTube non attiva: gli stream diretti possono interrompersi a metà brano">
+            title={streamWarn === 'cascade'
+              ? 'Le fonti YouTube stanno fallendo di continuo: se puoi, scarica i brani che ti servono'
+              : "Protezione anti-bot di YouTube non attiva: gli stream diretti possono interrompersi a metà brano"}>
             stream a rischio
           </span>
         )}

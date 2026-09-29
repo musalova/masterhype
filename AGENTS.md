@@ -349,6 +349,21 @@
     storia conservata), ts > reset dopo (senza sarebbero cancellati pur essendo
     successivi: le code sono separate e senza fasi il reset drenava sempre per
     ultimo). Item senza ts = post-reset (conservativo).
+- Telemetria dal campo (`fieldDiag.ts`): `diag.report` fallito per rete giù si
+  accoda in `mh-pending-issues` (cap 150) e risale al reconnect insieme a
+  `mh-stream-clients` (cap 300 — un campione `{client,ms,ok,device}` per ogni
+  tentativo-client della cascata streamUrl). `drainFieldDiag()` (chiamato dal
+  resync in App.tsx) replica la semantica pendingSync: stop su errore di rete,
+  retry budget ×2 sugli errori applicativi, merge-safe. Server: tabella
+  `client_stats` + canale `diag:streamStats`; l'aggregato 7gg per client è in
+  `IssueStats.clients` e nell'exportReport ("Client stream") — si legge quale
+  client Innertube sta morendo senza aprire __ytDbg. `direct.ts` marca anche
+  `stream-dead` quando l'HEAL riesce (il videoId originale entra in
+  bad_streams e viene saltato in futuro) e segnala 'cascade' via
+  `mh-stream-warn` dopo 3+ risoluzioni fallite di fila (chip "stream a
+  rischio" nel player, cooldown 15min). fieldDiag non importa remote
+  staticamente (remote→direct→fieldDiag sarebbe ciclo): il drain usa
+  `import('./remote')` lazy.
 - Fallback funzionalità server-side (`offlineRec.ts`): con PC spento rec.suggest/
   autoplaylist/stazioni/radio/assistente/trends si approssimano da libreria+like
   cachate + directSearch/directCharts/directUpNext. Le scalette generate dal PC

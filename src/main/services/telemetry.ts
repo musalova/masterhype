@@ -79,6 +79,48 @@ export function pickBoosts(query: string, u = 1): string[] {
   } catch { return []; }
 }
 
+// ---- Metriche cascata stream per client Innertube (dal campo) ----
+// I dispositivi remoti mandano un campione per tentativo-client; aggregando
+// si vede quale client sta morendo (okRate crollato) senza leggere i log.
+
+export interface ClientSampleIn { client?: string; ms?: number; ok?: boolean; device?: string }
+const MAX_CLIENT_ROWS = 5000;
+
+export function recordClientStats(rows: ClientSampleIn[]): void {
+  if (!Array.isArray(rows) || !rows.length) return;
+  try {
+    const db = getDb();
+    const ins = db.prepare('INSERT INTO client_stats (ts, client, ms, ok, device) VALUES (?,?,?,?,?)');
+    const now = Date.now();
+    for (const r of rows.slice(0, 400)) {
+      const client = String(r.client ?? '').slice(0, 40);
+      const ms = Number(r.ms);
+      if (!client || !Number.isFinite(ms) || ms < 0 || ms > 600_000) continue;
+      ins.run(now, client, Math.round(ms), r.ok ? 1 : 0, String(r.device ?? '').slice(0, 20) || null);
+    }
+    // Rotazione: tieni gli ultimi MAX_CLIENT_ROWS
+    db.prepare(`DELETE FROM client_stats WHERE id < (SELECT MIN(id) FROM (SELECT id FROM client_stats ORDER BY id DESC LIMIT ?))`)
+      .run(MAX_CLIENT_ROWS);
+  } catch { /* telemetria best-effort */ }
+}
+
+// Aggregato ultimi 7 giorni per client: quanti tentativi, % successo, latenza media.
+export function clientStats(): NonNullable<IssueStats['clients']> {
+  try {
+    const rows = getDb().prepare(
+      `SELECT client, COUNT(*) n, AVG(ok) okRate, AVG(ms) avgMs,
+              GROUP_CONCAT(DISTINCT device) devices
+       FROM client_stats WHERE ts > ? GROUP BY client ORDER BY n DESC`)
+      .all(Date.now() - 7 * 86400_000) as { client: string; n: number; okRate: number; avgMs: number; devices: string | null }[];
+    return rows.map((r) => ({
+      client: r.client, n: r.n,
+      okRate: Math.round(r.okRate * 100) / 100,
+      avgMs: Math.round(r.avgMs),
+      devices: String(r.devices ?? '').split(',').filter(Boolean),
+    }));
+  } catch { return []; }
+}
+
 // ---- Diagnostica aggregata per la schermata Impostazioni ----
 
 export function stats(): IssueStats {
@@ -98,7 +140,7 @@ export function stats(): IssueStats {
   const recent = db.prepare(
     `SELECT ts, kind, message, artist, title, video_id as videoId, query, healed
      FROM issues ORDER BY id DESC LIMIT 12`).all() as unknown as IssueStats['recent'];
-  return { byKind, healed, bad, picks, topFailing, recent };
+  return { byKind, healed, bad, picks, topFailing, recent, clients: clientStats() };
 }
 
 export function clearAll(): void {
@@ -119,6 +161,11 @@ export function exportReport(): string {
     '',
     'Brani con più problemi:',
     ...s.topFailing.map((t) => `  ${t.c}× ${t.artist} — ${t.title}`),
+    '',
+    'Client stream (7 giorni, dai dispositivi):',
+    ...(s.clients?.length
+      ? s.clients.map((c) => `  ${c.client}: ${Math.round(c.okRate * 100)}% ok · ~${c.avgMs}ms · ${c.n} tentativi${c.devices.length ? ` · [${c.devices.join(',')}]` : ''}`)
+      : ['  (nessun dato)']),
     '',
     'Ultimi eventi:',
     ...s.recent.map((r) => `  [${new Date(r.ts).toLocaleString('it-IT')}] ${r.kind}${r.healed ? ' (riparato)' : ''} — ${[r.artist, r.title].filter(Boolean).join(' — ') || r.query || ''} ${r.message ?? ''}`.trim()),

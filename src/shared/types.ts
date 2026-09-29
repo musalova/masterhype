@@ -268,6 +268,9 @@ export interface IssueStats {
   picks: number;         // scelte di ricerca imparate
   topFailing: { artist: string; title: string; c: number }[];
   recent: IssueEntry[];
+  // Campioni della cascata stream per client Innertube (ultimi 7gg, dal campo):
+  // okRate basso su un client = quel client sta morendo, non la rete.
+  clients?: { client: string; n: number; okRate: number; avgMs: number; devices: string[] }[];
 }
 
 export interface StationDef {
@@ -391,6 +394,7 @@ export const IPC = {
   backupImport: 'backup:import',
   backupData: 'backup:data',          // backup come JSON (il telefono lo salva in locale)
   issuesReportText: 'diag:reportText', // report diagnostica come testo (idem)
+  streamStats: 'diag:streamStats',   // batch di campioni cascata dal campo {client,ms,ok,device}
   remoteInfo: 'remote:info',
   pairingOpen: 'pairing:open',     // apre la finestra "Accoppia telefono" (~90s)
   pairingStatus: 'pairing:status', // ms residui della finestra

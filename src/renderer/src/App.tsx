@@ -5,6 +5,7 @@ import { useApp } from './store';
 import { api, isRemote } from './api';
 import { isOnline, onConnectivity, onReconnected, retryNow, setLocalUserId, hasRemoteConf, pcFreshAt } from './remote';
 import { drainPending, pendingCount } from './pendingSync';
+import { drainFieldDiag } from './fieldDiag';
 import { syncPrefs } from './persist';
 import { initNativeMedia, crashResume } from './nativeMedia';
 import { handleBack } from './backStack';
@@ -192,6 +193,9 @@ export default function App() {
         const s = useApp.getState();
         // Azioni compiute col PC spento (like, ascolti): le spediamo ora
         const dr = await drainPending().catch(() => null);
+        // Telemetria dal campo: issue e campioni cascata raccolti offline
+        // risalgono al PC (errori applicativi → retry budget, poi scarto)
+        void drainFieldDiag().catch(() => {});
         // PRIMA il drain (le patch settings accodate sono state applicate),
         // POI la lettura canonica: include anche i cambi fatti da altri
         // dispositivi mentre eravamo offline (gli eventi SSE erano giù).

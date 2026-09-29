@@ -2,6 +2,7 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import type { Innertube } from 'youtubei.js';
 import type { SearchResult, TrackRef, LyricsResult, PlayStreamResult, ArtistPage } from '../../shared/types';
 import { collect, flattenShelves, toTrack, toAlbum, toArtist, toPlaylist, dedupe, text, thumbOf, audiusMatch, finalizeSearch, applySearchFilters, rankArtists, searchSuggestions, collectVideoFallback, isEmptyPageError, parseHealth } from '../../shared/ytparse';
+import { enqueueIssue, noteClientSample, drainFieldDiag } from './fieldDiag';
 
 // Modalità autonoma del telefono: quando il PC è spento/irraggiungibile ma il
 // telefono ha internet, l'app parla DIRETTAMENTE con YouTube (ricerca, stream,
@@ -249,6 +250,7 @@ async function streamUrl(videoId: string, wantVideo = false, maxH?: number, dead
   // (206 sull'ultimo byte senza PoToken); il resto è ripiego.
   for (const c of ['TV_SIMPLY', 'ANDROID_VR', 'IOS', 'MWEB', 'TV', 'WEB', 'ANDROID', 'YTMUSIC_ANDROID', 'TV_EMBEDDED', 'WEB_EMBEDDED'] as const) {
     if (Date.now() > deadline) break; // budget finito: meglio errore che hang
+    const tc = performance.now();
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const info: any = await yt.getBasicInfo(videoId, { client: c as any, ...(vTok ? { po_token: vTok } : {}) });
@@ -262,12 +264,23 @@ async function streamUrl(videoId: string, wantVideo = false, maxH?: number, dead
         if (!u) continue;
         probed++;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (await probeStreamUrl(stamp(u))) { ydbg('picked', `${c}|${(f as any).mime_type}`); return stamp(u); }
+        if (await probeStreamUrl(stamp(u))) {
+          ydbg('picked', `${c}|${(f as any).mime_type}`);
+          noteClientSample(c, performance.now() - tc, true);
+          cascadeOk();
+          return stamp(u);
+        }
       }
       ydbg(c, `fmts:${pool.length} [${mimes}] probed:${probed}`);
+      noteClientSample(c, performance.now() - tc, false);
       if (dead && probed > 0 && ++gatedRuns >= 2) { ydbg('gatedBail', c); break; }
-    } catch (e) { last = e; ydbg(c, String(e instanceof Error ? e.message : e).slice(0, 120)); }
+    } catch (e) {
+      last = e;
+      noteClientSample(c, performance.now() - tc, false);
+      ydbg(c, String(e instanceof Error ? e.message : e).slice(0, 120));
+    }
   }
+  cascadeRough();
   throw last instanceof Error ? last : new Error('stream non disponibile');
 }
 
@@ -284,6 +297,26 @@ export function potTokenDown(): boolean { return potDead; }
 // questo il worst case di healing (~2 min) era uno spinner muto.
 function streamEvt(kind: 'phase' | 'warn', detail = ''): void {
   try { window.dispatchEvent(new CustomEvent(`mh-stream-${kind}`, { detail })); } catch { /* */ }
+}
+
+// Degrado di cascata: conta le risoluzioni finite male DI FILA (cascata
+// esaurita → heal/Audius o errore). Una risoluzione pulita resetta. A 3+ di
+// fila il problema è sistemico (rotazione layout, throttle, PoToken), non il
+// singolo brano → chip "stream a rischio" + issue che risale al PC.
+let roughStreak = 0;
+let lastCascadeWarn = 0;
+
+function cascadeOk(): void {
+  if (roughStreak) { roughStreak = 0; streamEvt('warn', potDead ? 'potoken' : ''); }
+}
+
+function cascadeRough(): void {
+  roughStreak++;
+  if (roughStreak >= 3 && Date.now() - lastCascadeWarn > 15 * 60_000) {
+    lastCascadeWarn = Date.now();
+    streamEvt('warn', 'cascade');
+    enqueueIssue('cascade-degraded', { message: `${roughStreak} risoluzioni stream fallite di fila (pot=${potDead ? 'morto' : 'ok'})` });
+  }
 }
 
 export function directStream(videoId: string): Promise<string> {
@@ -328,14 +361,22 @@ export async function directPlayStream(videoId: string, artist?: string, title?:
       const res = await directSearch(`${artist} ${title}`, false); // solo brani: serve un videoId, non le categorie
       for (const c of res.songs.filter((s) => s.videoId && s.videoId !== videoId).slice(0, 5)) {
         if (Date.now() > deadline) break;
-        try { return { url: await streamUrl(c.videoId, false, undefined, deadline), videoId: c.videoId, healed: true }; }
-        catch { /* candidato successivo */ }
+        try {
+          const url = await streamUrl(c.videoId, false, undefined, deadline);
+          // Il videoId originale è morto: il PC lo impara come bad_stream così
+          // le prossime ricerche/riproduzioni lo saltano direttamente.
+          enqueueIssue('stream-dead', { videoId, artist, title });
+          void drainFieldDiag().catch(() => {});
+          return { url, videoId: c.videoId, healed: true };
+        } catch { /* candidato successivo */ }
       }
     } catch { /* niente da riparare */ }
     // Audius resta anche oltre la deadline: una sola request economica
     streamEvt('phase', 'audius');
     for (const m of await audiusSearch(`${artist} ${title}`)) {
       if (!audiusMatch(m.artist, m.title, artist, title)) continue;
+      enqueueIssue('stream-dead', { videoId, artist, title });
+      void drainFieldDiag().catch(() => {});
       return { url: audiusStreamUrl(m.id), videoId: `audius:${m.id}`, healed: true };
     }
     streamEvt('phase', '');

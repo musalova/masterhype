@@ -137,6 +137,8 @@ const api = {
     reportText: (): Promise<string> => ipcRenderer.invoke(IPC.issuesReportText),
     report: (kind: string, d: { message?: string; artist?: string; title?: string; videoId?: string; query?: string }): Promise<void> =>
       ipcRenderer.invoke(IPC.issuesReport, kind, d),
+    streamStats: (rows: { client: string; ms: number; ok: boolean; device?: string }[]): Promise<void> =>
+      ipcRenderer.invoke(IPC.streamStats, rows),
     // Uso funzioni (schermate/azioni): solo locale, per capire cosa migliorare
     track: (name: string): Promise<void> => ipcRenderer.invoke(IPC.uxTrack, name),
   },

@@ -244,8 +244,18 @@ export function initDb(): void {
       duration_s INTEGER,
       fetched_at INTEGER NOT NULL
     );
+    -- Metriche della cascata stream per client Innertube, raccolte sui
+    -- dispositivi remoti e risalite qui al reconnect: si legge quale client
+    -- sta morendo senza spulciare i log.
+    CREATE TABLE IF NOT EXISTS client_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts INTEGER NOT NULL, client TEXT NOT NULL,
+      ms INTEGER NOT NULL, ok INTEGER NOT NULL,
+      device TEXT
+    );
     CREATE INDEX IF NOT EXISTS idx_events_user_ts ON events(user_id, ts);
     CREATE INDEX IF NOT EXISTS idx_events_user_type ON events(user_id, type);
+    CREATE INDEX IF NOT EXISTS idx_client_stats_ts ON client_stats(ts);
   `);
   // Bonifica: un bug del parser YT salvava "[object Object]" come artista —
   // quei segnali inquinerebbero il profilo gusti e la co-occorrenza

@@ -321,6 +321,8 @@ export const handlers: Record<string, Handler> = {
     if (kind === 'stream-dead' && d.videoId) downloader.noteStreamDead(d.videoId, d.artist, d.title);
     else telemetry.report(kind, d);
   },
+  // Metriche cascata stream raccolte sul dispositivo (coda mh-stream-clients)
+  [IPC.streamStats]: (_u: number, rows: telemetry.ClientSampleIn[]) => telemetry.recordClientStats(rows),
 
   // Backup headless: salva in Documenti; l'import remoto accetta il JSON nel body.
   // È sempre del profilo richiedente — mai dei dati di altri utenti.
