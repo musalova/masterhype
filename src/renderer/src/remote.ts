@@ -45,6 +45,15 @@ let conf = loadConf();
 export const hasRemoteConf = (): boolean => !!conf;
 export const remoteBase = (): string => conf?.base ?? '';
 export const remoteToken = (): string => conf?.token ?? '';
+// Il PC è raggiunto via Tailscale? (subnet CGNAT 100.64.0.0/10) — in quel
+// caso il telefono funziona già fuori casa: traffico cifrato, niente LAN.
+export function remoteViaTailscale(): boolean {
+  try {
+    const h = new URL(conf?.base ?? '').hostname;
+    const m = /^100\.(\d+)\./.exec(h);
+    return !!m && Number(m[1]) >= 64 && Number(m[1]) <= 127;
+  } catch { return false; }
+}
 
 // ---- Modalità "senza PC" (standalone) ----
 // Al primo avvio dell'APK l'utente può scegliere di usare l'app da sola:

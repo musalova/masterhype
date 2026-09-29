@@ -2,7 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { create } from 'zustand';
 import { hasRemoteConf, isOnline, remoteBase, remoteToken, watchPcs, discoveryAvailable, FEED_KEY } from './remote';
 import { api } from './api';
-import { mhFetch } from './direct';
+import { mhFetch, learnYtClients } from './direct';
 import { DEFAULT_UPDATE_FEED, feedApkManifest, feedUrlAllowed } from '../../shared/updateFeed';
 import type { AppUpdateState } from '../../shared/types';
 
@@ -24,6 +24,7 @@ export interface UpdateManifest {
   sha256?: string;
   notes?: string;
   minSupportedCode?: number; // se > installato: update OBBLIGATORIO (non ignorabile)
+  ytClients?: string[];      // ordine cascata client Innertube (hot-fix senza release)
 }
 
 // Feed pubblico: quello annunciato dal PC (memorizzato in FEED_KEY), oppure
@@ -131,6 +132,9 @@ async function fetchManifest(): Promise<UpdateInfo | null> {
       if (!res.ok) continue;
       const m = (await res.json().catch(() => null)) as UpdateManifest | null;
       if (!m || !Number.isFinite(m.versionCode)) continue;
+      // Cascata client YouTube hot-fixabile: solo da sorgenti fidate
+      // (PC autenticato / feed pubblico https — mai 'lan' non autenticata).
+      if (s.source !== 'lan' && m.ytClients) learnYtClients(m.ytClients);
       const apkUrl = new URL(m.url ?? (m.file ? `./${m.file}` : './app.apk'), s.url);
       // Solo http(s): un manifest avvelenato non deve puntare a file:/content:
       if (apkUrl.protocol !== 'http:' && apkUrl.protocol !== 'https:') continue;

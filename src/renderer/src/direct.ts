@@ -3,6 +3,33 @@ import type { Innertube } from 'youtubei.js';
 import type { SearchResult, TrackRef, LyricsResult, PlayStreamResult, ArtistPage } from '../../shared/types';
 import { collect, flattenShelves, toTrack, toAlbum, toArtist, toPlaylist, dedupe, text, thumbOf, audiusMatch, finalizeSearch, applySearchFilters, rankArtists, searchSuggestions, collectVideoFallback, isEmptyPageError, parseHealth } from '../../shared/ytparse';
 import { enqueueIssue, noteClientSample, drainFieldDiag } from './fieldDiag';
+import ytClientsJson from '../../shared/yt-clients.json';
+
+// Cascata dei client Innertube. Ordine di base in shared/yt-clients.json;
+// il feed pubblico (app-update.json → update.ts) può portare `ytClients`
+// per riordinare/aggiungere client SENZA una release dell'APK — è la sola
+// superficie hot-fixabile della modalità autonoma quando Google rompe un
+// client. I nomi dal feed vanno prima, poi i default non già inclusi.
+const DEFAULT_YT_CLIENTS = ytClientsJson.clients;
+const YT_CLIENTS_KEY = 'mh-yt-clients';
+function clientCascade(): string[] {
+  let feed: string[] = [];
+  try {
+    const raw = localStorage.getItem(YT_CLIENTS_KEY);
+    if (raw) {
+      const p = JSON.parse(raw) as unknown;
+      if (Array.isArray(p)) feed = p.filter((x): x is string => typeof x === 'string' && /^[A-Z_0-9]+$/.test(x)).slice(0, 20);
+    }
+  } catch { /* */ }
+  return [...feed, ...DEFAULT_YT_CLIENTS.filter((c) => !feed.includes(c))];
+}
+// update.ts salva la lista del feed qui: separata dal feed fetch così la
+// cascata si aggiorna anche quando il check update è già stato fatto.
+export function learnYtClients(list: unknown): void {
+  if (!Array.isArray(list)) return;
+  const ok = list.filter((x): x is string => typeof x === 'string' && /^[A-Z_0-9]+$/.test(x)).slice(0, 20);
+  if (ok.length) try { localStorage.setItem(YT_CLIENTS_KEY, JSON.stringify(ok)); } catch { /* */ }
+}
 
 // Modalità autonoma del telefono: quando il PC è spento/irraggiungibile ma il
 // telefono ha internet, l'app parla DIRETTAMENTE con YouTube (ricerca, stream,
@@ -247,8 +274,11 @@ async function streamUrl(videoId: string, wantVideo = false, maxH?: number, dead
   // secondi di attesa muta. Taglio corto → si va alla riparazione.
   let gatedRuns = 0;
   // TV_SIMPLY (TVHTML5_SIMPLY) è il client che oggi produce URL non gated
-  // (206 sull'ultimo byte senza PoToken); il resto è ripiego.
-  for (const c of ['TV_SIMPLY', 'ANDROID_VR', 'IOS', 'MWEB', 'TV', 'WEB', 'ANDROID', 'YTMUSIC_ANDROID', 'TV_EMBEDDED', 'WEB_EMBEDDED'] as const) {
+  // (206 sull'ultimo byte senza PoToken); il resto è ripiego. L'ordine è
+  // hot-fixabile: il feed pubblico app-update.json può portare `ytClients`
+  // (aggiornato senza release APK quando Google rompe un client — vedi
+  // update.ts); la lista di base è shared/yt-clients.json.
+  for (const c of clientCascade()) {
     if (Date.now() > deadline) break; // budget finito: meglio errore che hang
     const tc = performance.now();
     try {

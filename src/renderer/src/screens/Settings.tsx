@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Settings as SetIcon, FolderOpen, Check, X, Music4, KeyRound, LogIn, BrainCircuit, ThumbsDown, Activity, Wrench, FileDown, RefreshCw, Trash2, Smartphone, UserPlus, Pencil, ArrowUpCircle, MonitorSmartphone, FolderInput } from 'lucide-react';
 import QRCode from 'qrcode';
 import { api, isRemote } from '../api';
-import { clearRemoteConf, remoteBase, isOnline, hasRemoteConf, exitStandalone, resyncWhen, isStandalone, pcGone, remoteIsAdmin } from '../remote';
+import { clearRemoteConf, remoteBase, isOnline, hasRemoteConf, exitStandalone, resyncWhen, isStandalone, pcGone, remoteIsAdmin, remoteViaTailscale } from '../remote';
 import { updateSupported, useUpdate, checkUpdate, useDesktopUpdate, checkDesktopUpdate } from '../update';
 import { pickFiles, readJsonFile } from '../files';
 import { normalizeFeed } from '../../../shared/updateFeed';
@@ -580,7 +580,7 @@ function PhoneRemoteSection() {
   return (
     <>
     {hasRemoteConf() ? (
-    <Row label="Questo dispositivo" sub={`Collegato a ${remoteBase()}${pcVer ? ` · PC con MasterHype ${pcVer}` : ''}${isOnline() ? '' : ` · ${pcGone()}`}`}>
+    <Row label="Questo dispositivo" sub={`Collegato a ${remoteBase()}${pcVer ? ` · PC con MasterHype ${pcVer}` : ''}${remoteViaTailscale() ? ' · via Tailscale — funziona anche fuori casa, traffico cifrato' : ''}${isOnline() ? '' : ` · ${pcGone()}`}`}>
       <button onClick={() => { clearRemoteConf(); location.reload(); }}
         className="text-xs px-3 py-1.5 rounded-lg bg-panel2 hover:bg-line text-red-300">Scollega</button>
     </Row>
@@ -809,10 +809,10 @@ export default function Settings() {
             <option value="192">192 kbps</option>
           </select>
         </Row>
-        <Row label="Normalizza volume" sub="Loudness uniforme su tutto il CD (EBU R128)">
+        <Row label="Normalizza volume" sub="Volume uniforme in riproduzione (guadagno misurato, mai cotto nel file — tag ReplayGain inclusi)">
           <Toggle v={s.normalizeAudio} onChange={(v) => save({ normalizeAudio: v })} />
         </Row>
-        <Row label="Taglia silenzi inizio/fine" sub="Rimuove pause vuote tipiche dei video YouTube">
+        <Row label="Taglia silenzi inizio/fine" sub="Rimuove pause vuote tipiche dei video YouTube — distruttivo: altera il file per sempre">
           <Toggle v={s.trimSilence} onChange={(v) => save({ trimSilence: v })} />
         </Row>
         <Row label="Paese classifiche" sub="Per Trend Radar e chart">

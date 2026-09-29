@@ -10,7 +10,9 @@ const defaults = (): Settings => ({
   libraryDir: join(app.getPath('music'), 'MasterHype'),
   audioQuality: '320',
   normalizeAudio: true,
-  trimSilence: true,
+  // OFF di default: il trim è distruttivo (cuoce silenceremove nel file e può
+  // tagliare intro voluti); i gap dei CD audio li gestisce il burning.
+  trimSilence: false,
   burnSpeed: 0,
   country: 'IT',
   lastfmApiKey: '',

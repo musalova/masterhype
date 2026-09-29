@@ -564,8 +564,10 @@ export default function PlayerBar() {
               setDur(e.currentTarget.duration); setLoading(false);
               if (pendingSeek.current > 0) { e.currentTarget.currentTime = pendingSeek.current; pendingSeek.current = 0; }
             }
-            // Stream remoto? Il main sta misurando i LUFS: appena pronti livelliamo il volume
-            if (!e.currentTarget.dataset.local) pollLoudness(e.currentTarget.dataset.vid, e.currentTarget);
+            // Guadagno loudness: i download lo scrivono nella tabella al
+            // momento della conversione, gli stream lo misurano in background
+            // sul main — in entrambi i casi appena pronto livelliamo il volume.
+            pollLoudness(e.currentTarget.dataset.vid, e.currentTarget);
           }}
           onPlaying={clearStall}
           onStalled={onStall}

@@ -107,6 +107,11 @@ const sha = createHash('sha256').update(readFileSync(apk)).digest('hex');
 // (src/shared/whatsnew.json) → la card di aggiornamento le mostra PRIMA di
 // installare e WhatsNewCard le ripete al primo avvio della versione nuova.
 const whatsNew = JSON.parse(readFileSync(join(root, 'src', 'shared', 'whatsnew.json'), 'utf8'));
+// Cascata client YouTube della modalità autonoma: pubblicarla nel manifest
+// permette hot-fix via feed (edit dell'asset su GitHub Releases) quando
+// Google rompe un client, SENZA rilasciare un APK nuovo. Fonte unica:
+// src/shared/yt-clients.json — l'asset pubblicato si può riordinare a mano.
+const ytClients = JSON.parse(readFileSync(join(root, 'src', 'shared', 'yt-clients.json'), 'utf8')).clients;
 const man = {
   versionCode: vcNow,
   versionName: pkg.version,
@@ -115,6 +120,7 @@ const man = {
   sha256: sha,
   builtAt: new Date().toISOString(),
   notes: (whatsNew[pkg.version] ?? []).join('\n') || undefined,
+  ytClients,
 };
 const targets = [
   join(root, 'release'),

@@ -234,13 +234,21 @@ async function runJob(job: DownloadJob): Promise<void> {
 
     const filters: string[] = [];
     if (s.trimSilence) {
-      // taglia silenzi/intro vuoti tipici dei video
+      // taglia silenzi/intro vuoti tipici dei video — OFF di default: il trim
+      // è DISTRUTTIVO (cotto nel file, taglia intro voluti); i gap dei CD
+      // audio li gestisce il burning, non il file.
       filters.push('silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.08');
       filters.push('areverse');
       filters.push('silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.08');
       filters.push('areverse');
     }
-    if (s.normalizeAudio) filters.push('loudnorm=I=-14:TP=-1:LRA=11');
+    // Normalizzazione SENZA distruggere il segnale: si misura l'input_i del
+    // sorgente, il guadagno va nei tag ReplayGain/R128 (letti dai player
+    // esterni) e nella tabella loudness (l'app lo applica a runtime su
+    // <audio>.volume, come già per gli stream). Il loudnorm non si cuoce più
+    // nel file: niente doppia compressione psicoacustica, file = originale.
+    let lufs: number | null = null;
+    if (s.normalizeAudio) lufs = await measureLufs(rawFile);
 
     const args = ['-y', '-i', rawFile];
     if (coverFile) args.push('-i', coverFile, '-map', '0:a', '-map', '1:v', '-c:v', 'mjpeg', '-disposition:v', 'attached_pic');
@@ -252,6 +260,13 @@ async function runJob(job: DownloadJob): Promise<void> {
       '-metadata', `artist=${track.artist}`,
     );
     if (track.album) args.push('-metadata', `album=${track.album}`);
+    if (lufs != null) {
+      storeLoudness(track.videoId, lufs);
+      // Tag per i player esterni: replaygain_track_gain = dB per arrivare al
+      // riferimento -18 LUFS (89 dB SPL), r128_track_gain = Q7.8 verso -23.
+      args.push('-metadata', `replaygain_track_gain=${(-18 - lufs).toFixed(2)} dB`);
+      args.push('-metadata', `r128_track_gain=${Math.round((-23 - lufs) * 256)}`);
+    }
     args.push(outPath);
 
     await execP(ffmpegPath(), args);
@@ -528,10 +543,10 @@ export function noteStreamDead(videoId: string, artist?: string, title?: string)
 }
 
 // ---- Normalizzazione volume in anteprima ----
-// I download sono già livellati a -14 LUFS da loudnorm in fase di conversione;
-// gli stream remoti no — qui misuriamo l'input_i (LUFS integrato) con ffmpeg
-// in background e il renderer applica il guadagno compensativo via <audio>.volume.
-// La misura è persistente (tabella loudness): una traccia si misura una volta sola.
+// NIENTE loudnorm cotto nel file: il download conserva il segnale com'è e la
+// misura input_i (LUFS integrato) va nella tabella loudness + nei tag
+// ReplayGain/R128 — il renderer applica il guadagno a runtime via
+// <audio>.volume. La misura è persistente: una traccia si misura una volta sola.
 
 const lufsMem = new Map<string, number>();
 const lufsInflight = new Set<string>();
@@ -546,27 +561,41 @@ export function loudnessOf(videoId: string): number | null {
   return null;
 }
 
+function storeLoudness(videoId: string, lufs: number): void {
+  lufsMem.set(videoId, lufs);
+  try {
+    getDb().prepare('INSERT OR REPLACE INTO loudness (video_id,lufs,ts) VALUES (?,?,?)')
+      .run(videoId, lufs, Date.now());
+  } catch { /* ignora */ }
+}
+
+// Misura input_i (LUFS integrato) di un file/URL via ffmpeg loudnorm in
+// sola analisi. null se la misura non è utile (errore, silenzio, timeout).
+function measureLufs(input: string, sampleS = 0): Promise<number | null> {
+  return new Promise((resolve) => {
+    const args = ['-nostats', '-i', input];
+    // 60s di campione bastano per una stima decente dell'integrato (stream)
+    if (sampleS > 0) args.push('-t', String(sampleS));
+    args.push('-af', 'loudnorm=print_format=json', '-f', 'null', '-');
+    const proc = spawn(ffmpegPath(), args, { windowsHide: true });
+    let se = '';
+    proc.stderr.on('data', (d) => { se += String(d); if (se.length > 200_000) se = se.slice(-100_000); });
+    const kill = setTimeout(() => { try { proc.kill(); } catch { /* */ } }, 90_000);
+    const done = () => {
+      clearTimeout(kill);
+      const m = /"input_i"\s*:\s*"(-?[\d.]+)"/.exec(se);
+      const lufs = m ? parseFloat(m[1]) : NaN;
+      resolve(Number.isFinite(lufs) && lufs > -70 ? lufs : null); // -inf/silenzio: non utile
+    };
+    proc.on('error', () => { clearTimeout(kill); resolve(null); });
+    proc.on('close', done);
+  });
+}
+
 function analyzeLoudness(videoId: string, url: string): void {
   if (lufsInflight.has(videoId) || loudnessOf(videoId) != null) return;
   lufsInflight.add(videoId);
-  // 60s di campione bastano per una stima decente dell'integrato
-  const proc = spawn(ffmpegPath(), [
-    '-nostats', '-i', url, '-t', '60', '-af', 'loudnorm=print_format=json', '-f', 'null', '-',
-  ], { windowsHide: true });
-  let se = '';
-  proc.stderr.on('data', (d) => { se += String(d); if (se.length > 200_000) se = se.slice(-100_000); });
-  const kill = setTimeout(() => { try { proc.kill(); } catch { /* */ } }, 90_000);
-  const done = () => { clearTimeout(kill); lufsInflight.delete(videoId); };
-  proc.on('error', done);
-  proc.on('close', () => {
-    done();
-    const m = /"input_i"\s*:\s*"(-?[\d.]+)"/.exec(se);
-    const lufs = m ? parseFloat(m[1]) : NaN;
-    if (!Number.isFinite(lufs) || lufs <= -70) return; // -inf/silenzio: non è una misura utile
-    lufsMem.set(videoId, lufs);
-    try {
-      getDb().prepare('INSERT OR REPLACE INTO loudness (video_id,lufs,ts) VALUES (?,?,?)')
-        .run(videoId, lufs, Date.now());
-    } catch { /* ignora */ }
-  });
+  void measureLufs(url, 60)
+    .then((lufs) => { if (lufs != null) storeLoudness(videoId, lufs); })
+    .finally(() => lufsInflight.delete(videoId));
 }

@@ -82,6 +82,12 @@
   dallo ts; VACUUM solo se il pruning ha cancellato righe), `settings.ts`, `ipc.ts`, `services/`
 - `src/main/services/` — `ytmusic.ts` (youtubei.js), `downloader.ts` (yt-dlp+ffmpeg), `library.ts`,
   `sources.ts` (Deezer/Last.fm/Spotify), `recommend.ts` (scoring+assistente), `trends.ts`, `burner.ts`
+- **Audio non distruttivo**: i download NON cuociono loudnorm/silenceremove nel
+  file — `normalizeAudio` misura `input_i` del sorgente e scrive il guadagno nei
+  tag `replaygain_track_gain`/`r128_track_gain` + tabella `loudness`; il renderer
+  applica il gain a runtime (gainMap in PlayerBar, come per gli stream).
+  `trimSilence` è OFF di default (distruttivo: taglia intro voluti; i gap CD li
+  gestisce il burning). MAI reintrodurre filtri audio permanenti nel file.
 - `src/preload/index.ts` — contextBridge `window.masterhype`
 - `src/renderer/` — React + Tailwind v4 + Framer Motion + zustand (`store.ts`;
   chiavi/prefs persistite in `storePersist.ts`, blob track in `trackFetch.ts`)
@@ -221,7 +227,9 @@
   in Impostazioni → "Scollega tutti"), codice condiviso rotabile a caldo
   ("Rigenera" — `authed()` rilegge le settings a ogni request, niente restart),
   QR monouso, token mai nelle URL (proxy SW /__pc/*). Se serve confidenzialità
-  vera fuori casa: Tailscale (già supportato, è una VPN cifrata).
+  vera fuori casa: Tailscale (già supportato, è una VPN cifrata) —
+  `remoteViaTailscale()` riconosce un base nel CGNAT 100.64/10 e la riga
+  "Questo dispositivo" in Impostazioni lo dichiara all'utente.
   (NON duplicare logica: aggiungere il canale lì, ipc.ts lo registra e remote.ts lo espone)
 - `src/renderer/src/remote.ts` — connessione al PC (conf, token, SSE, claim);
   `remoteApi.ts` = specchio di `MasterHypeApi` via HTTP+SSE; `api.ts` sceglie
@@ -563,6 +571,11 @@
   `/api/info.updateFeed` → il telefono lo memorizza (`FEED_KEY`, solo se
   fidato) e lo usa anche lontano dal PC / senza pairing. Override test:
   `mh-update-url` in localStorage (URL manifest completo, stesso vincolo).
+  Il manifest può portare `ytClients` (array di nomi client Innertube):
+  da sorgenti fidate ('pc'/'public', MAI 'lan') riordina la cascata di
+  direct.ts senza release — hot-fix quando Google rompe un client. Fonte
+  unica dell'ordine: `src/shared/yt-clients.json` (build-android lo copia
+  nel manifest; l'asset pubblicato si può riordinare a mano sul release).
 - **Auto-update EXE** (`src/main/services/appUpdate.ts`, electron-updater):
   stesso feed (`latest.yml` + Setup.exe + .blockmap — il manifest è quello di
   electron-builder, sha512 verificato dalla libreria). Provider `generic`,

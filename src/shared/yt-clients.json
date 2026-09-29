@@ -1,0 +1,14 @@
+{
+  "clients": [
+    "TV_SIMPLY",
+    "ANDROID_VR",
+    "IOS",
+    "MWEB",
+    "TV",
+    "WEB",
+    "ANDROID",
+    "YTMUSIC_ANDROID",
+    "TV_EMBEDDED",
+    "WEB_EMBEDDED"
+  ]
+}
