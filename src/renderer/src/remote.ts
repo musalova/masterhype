@@ -9,6 +9,7 @@ import {
   directArtistPage, directPlaylistTracks,
 } from './direct';
 import { enqueueIssue } from './fieldDiag';
+import { feedUrlAllowed, normalizeFeed } from '../../shared/updateFeed';
 
 // Client remoto: su telefono/tablet (browser o app Android) non esiste
 // window.masterhype — la stessa identica UI parla col PC via HTTP.
@@ -802,7 +803,7 @@ function learnAlts(alts: unknown): void {
 export const FEED_KEY = 'mh-update-feed';
 function learnFeed(feed: unknown): void {
   try {
-    if (typeof feed === 'string' && /^https?:\/\//.test(feed)) localStorage.setItem(FEED_KEY, feed);
+    if (typeof feed === 'string' && feedUrlAllowed(feed)) localStorage.setItem(FEED_KEY, normalizeFeed(feed) || feed);
     else if (feed === undefined || feed === null || feed === '') localStorage.removeItem(FEED_KEY);
   } catch { /* */ }
 }

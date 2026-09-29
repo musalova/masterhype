@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { hasRemoteConf, isOnline, remoteBase, remoteToken, watchPcs, discoveryAvailable, FEED_KEY } from './remote';
 import { api } from './api';
 import { mhFetch } from './direct';
-import { DEFAULT_UPDATE_FEED, feedApkManifest } from '../../shared/updateFeed';
+import { DEFAULT_UPDATE_FEED, feedApkManifest, feedUrlAllowed } from '../../shared/updateFeed';
 import type { AppUpdateState } from '../../shared/types';
 
 // Aggiornamento automatico dell'APK.
@@ -30,9 +30,11 @@ export interface UpdateManifest {
 // 'mh-update-url' (override manuale/test), oppure il default di build.
 function publicManifestUrl(): string {
   try {
+    // Override manuale/test: URL manifest completo — stesso vincolo https.
     const manual = localStorage.getItem('mh-update-url');
-    if (manual) return manual;
-    return feedApkManifest(localStorage.getItem(FEED_KEY) || DEFAULT_UPDATE_FEED);
+    if (manual) return feedUrlAllowed(manual) ? manual : '';
+    return feedApkManifest(localStorage.getItem(FEED_KEY) || DEFAULT_UPDATE_FEED)
+        || feedApkManifest(DEFAULT_UPDATE_FEED);
   } catch { return feedApkManifest(DEFAULT_UPDATE_FEED); }
 }
 

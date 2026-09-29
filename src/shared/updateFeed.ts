@@ -7,13 +7,27 @@
 // settings.updateUrl resta override manuale (feed privato, test).
 export const DEFAULT_UPDATE_FEED = 'https://github.com/musalova/masterhype/releases/latest/download';
 
-// URL base del feed senza slash finale; '' se non è un http(s) valido.
+// http: ammesso SOLO su loopback (test/sviluppo). Un feed http:// su rete
+// vera è impersonabile da MITM: latest.yml/sha256 arriverebbero dalla STESSA
+// fonte compromessa e la verifica integrità degli artifact non salverebbe.
+function isLoopbackHost(host: string): boolean {
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
+}
+
+// Vale per base feed E URL manifest/manuali: https sempre, http solo loopback.
+export function feedUrlAllowed(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'https:' || (u.protocol === 'http:' && isLoopbackHost(u.hostname));
+  } catch { return false; }
+}
+
+// URL base del feed senza slash finale; '' se non è un URL valido o fidato.
 export function normalizeFeed(raw: string | undefined | null): string {
   const s = String(raw ?? '').trim();
-  if (!s) return '';
+  if (!s || !feedUrlAllowed(s)) return '';
   try {
     const u = new URL(s);
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return '';
     u.hash = '';
     u.search = '';
     return u.href.replace(/\/+$/, '');

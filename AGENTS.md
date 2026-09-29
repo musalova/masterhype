@@ -551,10 +551,15 @@
   app-update.json, APK — caricati da release.mjs con GH_TOKEN). Repo PUBBLICO
   obbligatorio (asset privati richiedono auth). `settings.updateUrl` =
   override manuale per feed alternativi (Impostazioni → Aggiornamenti, MAI
-  accettato da remoto: `settings:set` lo filtra lato server). Il PC annuncia
-  il feed effettivo in `/api/info.updateFeed` → il telefono lo memorizza
-  (`FEED_KEY`) e lo usa anche lontano dal PC / senza pairing. Override test:
-  `mh-update-url` in localStorage (URL manifest completo).
+  accettato da remoto: `settings:set` lo filtra lato server). **Solo https**:
+  `normalizeFeed`/`feedUrlAllowed` rifiutano `http://` su host non-loopback
+  (un feed in chiaro è impersonabile da MITM — gli hash arriverebbero dalla
+  stessa fonte; http resta solo per localhost/127.0.0.1/[::1], uso test).
+  Un updateUrl salvato non fidato non disabilita gli update: `feedUrl()` ricade
+  sul default GitHub. Il PC annuncia il feed effettivo in
+  `/api/info.updateFeed` → il telefono lo memorizza (`FEED_KEY`, solo se
+  fidato) e lo usa anche lontano dal PC / senza pairing. Override test:
+  `mh-update-url` in localStorage (URL manifest completo, stesso vincolo).
 - **Auto-update EXE** (`src/main/services/appUpdate.ts`, electron-updater):
   stesso feed (`latest.yml` + Setup.exe + .blockmap — il manifest è quello di
   electron-builder, sha512 verificato dalla libreria). Provider `generic`,

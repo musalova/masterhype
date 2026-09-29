@@ -38,7 +38,9 @@ export function appUpdateState(): AppUpdateState {
 }
 
 export function feedUrl(): string {
-  return normalizeFeed(getSettings().updateUrl || DEFAULT_UPDATE_FEED);
+  // updateUrl invalido/non fidato (es. http:// non-loopback) → default sicuro:
+  // meglio aggiornare dal feed GitHub che restare senza security updates.
+  return normalizeFeed(getSettings().updateUrl) || DEFAULT_UPDATE_FEED;
 }
 
 function wire(): void {

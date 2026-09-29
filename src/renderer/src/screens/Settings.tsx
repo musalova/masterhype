@@ -329,7 +329,7 @@ function DesktopUpdateCard({ s, save }: { s: Settings; save: (p: Partial<Setting
     : 'Controllo automatico all\'avvio e ogni 6 ore';
   const saveFeed = async () => {
     const f = normalizeFeed(feed);
-    if (feed.trim() && !f) { toast('Indirizzo non valido — serve un URL http(s)://…', 'err'); return; }
+    if (feed.trim() && !f) { toast('Indirizzo non valido — serve un URL https://… (http solo per localhost)', 'err'); return; }
     if (f === (s.updateUrl ?? '')) return;
     await save({ updateUrl: f });
     toast(f ? 'Server aggiornamenti salvato — controllo in corso' : 'Server aggiornamenti rimosso', 'ok');
