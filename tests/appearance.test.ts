@@ -10,11 +10,6 @@ const colors = (id: string) => {
   const block = css.match(new RegExp(`\\[data-accent='${id}'\\]\\s*\\{([^}]+)\\}`))?.[1] ?? '';
   return Object.fromEntries([...block.matchAll(/--color-([\w]+):\s*(#[\da-f]{6})/g)].map((m) => [m[1], m[2]]));
 };
-const luminance = (hex: string) => {
-  const rgb = hex.slice(1).match(/../g)!.map((c) => parseInt(c, 16) / 255).map((c) => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4);
-  return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
-};
-const contrast = (a: string, b: string) => (Math.max(luminance(a), luminance(b)) + .05) / (Math.min(luminance(a), luminance(b)) + .05);
 
 beforeEach(() => {
   prefs.clear();
@@ -23,21 +18,14 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe('complete appearance themes', () => {
-  it('provides nine unique themes while retaining existing preference IDs', () => {
-    expect(new Set(ACCENTS.map((a) => a.id)).size).toBe(9);
-    expect(ACCENTS.map((a) => a.id)).toEqual(expect.arrayContaining(['sunset', 'ocean', 'lime', 'violet', 'gold', 'mono']));
+describe('appearance themes', () => {
+  it('provides the six classic themes', () => {
+    expect(ACCENTS.map((a) => a.id)).toEqual(['sunset', 'ocean', 'lime', 'violet', 'gold', 'mono']);
   });
-  it.each(ACCENTS)('$name defines surfaces and readable foregrounds', ({ id }) => {
+  it.each(ACCENTS)('$name defines matching swatch and CSS colors', ({ id, c1, c2 }) => {
     const palette = colors(id);
-    for (const key of ['bg', 'panel', 'panel2', 'line', 'txt', 'dim', 'accent', 'accent2']) expect(palette[key], `${id}: ${key}`).toBeTruthy();
-    for (const surface of ['bg', 'panel', 'panel2']) {
-      expect(contrast(palette.txt, palette[surface])).toBeGreaterThanOrEqual(7);
-      expect(contrast(palette.dim, palette[surface])).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(palette.accent, palette[surface])).toBeGreaterThanOrEqual(4.5);
-    }
-    expect(contrast('#091112', palette.accent)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast('#091112', palette.accent2)).toBeGreaterThanOrEqual(4.5);
+    expect(palette.accent).toBe(c1);
+    expect(palette.accent2).toBe(c2);
   });
   it('falls back safely for unknown persisted values', () => {
     applyAppearance('invalid', 'invalid');

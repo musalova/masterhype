@@ -263,7 +263,7 @@ export default function Home() {
       {coldStart ? null : loading && !hero ? (
         /* Skeleton hero: stessa altezza del vero hero — niente salto di layout
            quando arriva il brano in vetrina */
-        <div className="hero home-hero bg-panel border border-line">
+        <div className="hero m-4 mb-2 md:m-6 md:mb-2 bg-panel border border-line">
           <div className="relative p-5 pb-5 md:p-8 md:pb-7 max-w-2xl w-full space-y-3">
             <LoadingState label="Preparo i tuoi prossimi ascolti…" detail="Mix, scoperte e musica scelta per te." layout="inline" />
             <Skeleton className="h-9 w-2/3" />
@@ -275,16 +275,15 @@ export default function Home() {
           </div>
         </div>
       ) : hero ? (
-        <section className="hero home-hero" aria-label="Scelto per te">
+        <div className="hero m-4 mb-2 md:m-6 md:mb-2">
           {heroBgReady && <div className="hero-bg" style={{ backgroundImage: `url(${heroBgReady})` }} />}
           <div className="hero-fade" />
-          <div className="hero-art" aria-hidden="true"><CoverImg src={hero.thumbnail} className="w-full h-full object-cover" icon={<Disc3 />} /></div>
-          <div className="hero-content">
+          <div className="relative p-5 pb-5 md:p-8 md:pb-7 max-w-2xl">
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
               <div className="text-[11px] font-bold tracking-[0.25em] text-accent uppercase mb-2 flex items-center gap-2">
-                <Sparkles size={12} /> Scelto per te
+                <Sparkles size={12} /> {greet}<span className="max-md:hidden"> — scelto per te</span>
               </div>
-              <h2 className="hero-title">{hero.title}</h2>
+              <h1 className="hero-title text-3xl md:text-4xl font-black tracking-tight leading-tight">{hero.title}</h1>
               <div className="text-base text-white/85 mt-1.5 font-medium">{hero.artist}</div>
               {'reason' in hero && hero.reason && (
                 <div className="text-[12px] text-white/60 mt-2 max-w-md">{hero.reason}</div>
@@ -304,16 +303,16 @@ export default function Home() {
               </div>
             </motion.div>
           </div>
-        </section>
+        </div>
       ) : (
-        <div className="home-hero hero" style={{ minHeight: 260 }}>
+        <div className="m-6 mb-2 hero" style={{ minHeight: 220 }}>
           <div className="hero-fade" />
-          <div className="hero-art" aria-hidden="true"><Disc3 strokeWidth={0.7} /></div>
-          <div className="hero-content">
-            <div className="eyebrow mb-3">Premi play al tuo mondo</div>
-            <h2 className="hero-title">La musica giusta.<br /><span className="text-accent">Il tuo momento.</span></h2>
-            <p className="text-dim text-sm mt-3 max-w-md leading-relaxed">Ritrova ciò che ami, scopri la prossima ossessione. La tua collezione comincia con un ascolto.</p>
-            <div className="flex flex-wrap gap-3 mt-5">
+          <div className="relative p-8">
+            <h1 className="hero-title text-4xl font-black tracking-tight">
+              <span className="neon-text [text-shadow:none]">{greet}.</span>
+            </h1>
+            <p className="text-dim mt-2">Cerca un brano o avvia una stazione: la tua musica, pronta per il CD della macchina.</p>
+            <div className="flex gap-3 mt-5">
               <button onClick={() => nav('search')} className="btn-hero btn-hero-play"><Play size={18} /> Cerca musica</button>
               <button onClick={() => nav('assistant')} className="btn-hero btn-hero-ghost"><Wand2 size={17} /> Componi un CD</button>
             </div>

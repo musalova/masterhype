@@ -29,37 +29,28 @@ const KIND_LABEL: Record<string, string> = {
 function AppearanceCard() {
   const [accent, setAccent] = usePersistedState<AccentId>(ACCENT_KEY, 'sunset');
   const [motion, setMotion] = usePersistedState<'on' | 'off'>(MOTION_KEY, 'on');
-  useEffect(() => applyAppearance(accent, motion), [accent, motion]);
+  const selected = ACCENTS.some((a) => a.id === accent) ? accent : 'sunset';
+  useEffect(() => applyAppearance(selected, motion), [selected, motion]);
   return (
-    <section className="appearance-card bg-panel border border-line rounded-2xl p-4 sm:p-6 mb-6" aria-labelledby="appearance-title">
-      <div className="eyebrow mb-2">Il tuo spazio, il tuo stile</div>
-      <h3 id="appearance-title" className="text-xl font-semibold tracking-tight">Un’atmosfera per ogni ascolto.</h3>
-      <p className="text-sm text-dim mt-2 max-w-lg leading-relaxed">Nove temi completi, dai fondi ai piccoli dettagli. Si applicano subito e seguono il tuo profilo su PC e telefono.</p>
-      <div className="theme-grid" role="group" aria-label="Tema dell’interfaccia">
-        {ACCENTS.map((a) => (
-          <button key={a.id} onClick={() => setAccent(a.id)} aria-pressed={accent === a.id}
-            aria-label={`${a.name} — ${a.desc}`} className="theme-option self-start">
-            <span className="theme-preview" data-accent={a.id} aria-hidden="true">
-              <span className="theme-preview-rail"><i /><i /><i /></span>
-              <span className="theme-preview-content">
-                <span className="theme-preview-hero"><span /><i /></span>
-                <span className="theme-preview-shelf"><i /><i /><i /></span>
-              </span>
-              <span className="theme-preview-player"><i /><span /><b /></span>
-              {accent === a.id && <span className="theme-selected"><Check size={13} strokeWidth={3} /></span>}
-            </span>
-            <span className="flex items-center justify-between gap-2 mt-2.5">
-              <span className="text-[13px] font-semibold">{a.name}</span>
-              {accent === a.id && <span className="text-[10px] text-accent font-medium">Attivo</span>}
-            </span>
-            <span className="block text-[11px] leading-relaxed text-dim mt-0.5">{a.desc}</span>
-          </button>
-        ))}
-      </div>
-      <Row label="Riduci animazioni" sub="Un’esperienza più quieta. Rispettiamo anche la preferenza del dispositivo.">
+    <div className="bg-panel border border-line rounded-xl px-5 mb-6">
+      <div className="py-3 text-xs font-bold text-dim uppercase tracking-wider border-b border-line/50">Aspetto</div>
+      <Row label="Colore" sub="Il colore dell'app — pulsanti, aloni, stazioni">
+        <div className="flex gap-2" role="group" aria-label="Colore dell'app">
+          {ACCENTS.map((a) => (
+            <button key={a.id} onClick={() => setAccent(a.id)} title={a.name} aria-label={a.name}
+              aria-pressed={selected === a.id} data-accent={a.id}
+              className={`theme-swatch w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 flex items-center justify-center
+                ${selected === a.id ? 'border-white scale-110' : 'border-transparent'}`}
+              style={{ background: `linear-gradient(135deg, ${a.c1}, ${a.c2})` }}>
+              {selected === a.id && <Check size={13} className="text-white drop-shadow" />}
+            </button>
+          ))}
+        </div>
+      </Row>
+      <Row label="Riduci animazioni" sub="Spegne sfondo animato ed effetti — utile su PC lenti o per risparmiare batteria">
         <Toggle label="Riduci animazioni" v={motion === 'off'} onChange={(b) => setMotion(b ? 'off' : 'on')} />
       </Row>
-    </section>
+    </div>
   );
 }
 

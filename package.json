@@ -1,6 +1,6 @@
 {
   "name": "masterhype",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "MasterHype - la tua musica, il tuo CD. Ricerca, suggerimenti e masterizzazione.",
   "main": "./out/main/index.js",
   "author": "MasterHype",

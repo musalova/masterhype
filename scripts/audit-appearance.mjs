@@ -73,16 +73,16 @@ try {
   await sleep(2200);
   await viewport(1365, 900);
   await navigate('settings');
-  check('nine theme previews', await ev(`document.querySelectorAll('.theme-option').length === 9`));
-  const surfaces = new Set();
-  for (const id of ['sunset', 'ocean', 'lime', 'violet', 'gold', 'mono', 'rose', 'ember', 'midnight']) {
-    await ev(`document.querySelector('.theme-preview[data-accent="${id}"]').closest('button').click()`);
+  check('six theme swatches', await ev(`document.querySelectorAll('.theme-swatch').length === 6`));
+  const accents = new Set();
+  for (const id of ['sunset', 'ocean', 'lime', 'violet', 'gold', 'mono']) {
+    await ev(`document.querySelector('.theme-swatch[data-accent="${id}"]').click()`);
     await sleep(100);
-    check(`theme ${id} applies and persists`, await ev(`document.documentElement.dataset.accent === '${id}' && JSON.parse(localStorage.getItem('mh-pref-accent')) === '${id}' && document.querySelector('.theme-preview[data-accent="${id}"]').closest('button').getAttribute('aria-pressed') === 'true'`));
-    surfaces.add(await ev(`getComputedStyle(document.documentElement).getPropertyValue('--color-bg').trim()`));
+    check(`theme ${id} applies and persists`, await ev(`document.documentElement.dataset.accent === '${id}' && JSON.parse(localStorage.getItem('mh-pref-accent')) === '${id}' && document.querySelector('.theme-swatch[data-accent="${id}"]').getAttribute('aria-pressed') === 'true'`));
+    accents.add(await ev(`getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim()`));
   }
-  check('nine distinct backgrounds', surfaces.size === 9);
-  await ev(`document.querySelector('.theme-preview[data-accent="sunset"]').closest('button').click()`);
+  check('six distinct accent palettes', accents.size === 6);
+  await ev(`document.querySelector('.theme-swatch[data-accent="sunset"]').click()`);
   await sleep(150);
   await screenshot('desktop-themes');
   await ev(`document.querySelector('[aria-label="Riduci animazioni"]').click()`);
@@ -130,7 +130,7 @@ try {
   await navigate('settings');
   await screenshot('phone-themes');
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
-  check('system reduced motion respected', await ev(`matchMedia('(prefers-reduced-motion: reduce)').matches && parseFloat(getComputedStyle(document.querySelector('.theme-preview')).transitionDuration) < .001`));
+  check('system reduced motion respected', await ev(`matchMedia('(prefers-reduced-motion: reduce)').matches && parseFloat(getComputedStyle(document.querySelector('.theme-swatch')).transitionDuration) < .001`));
   check('no automatic playback', await ev(`!window.__app.getState().player.playing && [...document.querySelectorAll('audio')].every((a) => a.paused)`));
   check('no renderer exceptions', errors.length === 0);
   if (errors.length) console.log(errors);

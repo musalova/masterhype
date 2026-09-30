@@ -3,20 +3,17 @@
 // dispositivo via 'mh-pref-live'. Le palette vivono in index.css (data-accent).
 import { loadPref } from './persist';
 
-export type AccentId = 'sunset' | 'ocean' | 'lime' | 'violet' | 'gold' | 'mono' | 'rose' | 'ember' | 'midnight';
+export type AccentId = 'sunset' | 'ocean' | 'lime' | 'violet' | 'gold' | 'mono';
 export const ACCENT_KEY = 'mh-pref-accent';
 export const MOTION_KEY = 'mh-pref-motion';
 
-export const ACCENTS: { id: AccentId; name: string; desc: string }[] = [
-  { id: 'sunset', name: 'Signature', desc: 'Ossidiana, menta e rame' },
-  { id: 'ocean', name: 'Abissi', desc: 'Blu profondo, luce di ghiaccio' },
-  { id: 'lime', name: 'Aurora', desc: 'Verde boreale, riflessi giada' },
-  { id: 'violet', name: 'Nebula', desc: 'Viola vellutato e orchidea' },
-  { id: 'gold', name: 'Champagne', desc: 'Toni caldi, dettagli dorati' },
-  { id: 'mono', name: 'Graphite', desc: 'Nero e argento, solo l’essenziale' },
-  { id: 'rose', name: 'Sakura', desc: 'Rosa cipria su prugna scuro' },
-  { id: 'ember', name: 'Terracotta', desc: 'Rame, ambra e terra bruciata' },
-  { id: 'midnight', name: 'Blue Hour', desc: 'Indaco notturno e pervinca' },
+export const ACCENTS: { id: AccentId; name: string; c1: string; c2: string }[] = [
+  { id: 'sunset', name: 'Neon', c1: '#2dd4bf', c2: '#ff9e3d' },
+  { id: 'ocean', name: 'Oceano', c1: '#38bdf8', c2: '#6366f1' },
+  { id: 'lime', name: 'Lime', c1: '#4ade80', c2: '#22d3ee' },
+  { id: 'violet', name: 'Viola', c1: '#a78bfa', c2: '#f472b6' },
+  { id: 'gold', name: 'Oro', c1: '#fbbf24', c2: '#fb7185' },
+  { id: 'mono', name: 'Mono', c1: '#f5f5f5', c2: '#a3a3a3' },
 ];
 
 export function applyAppearance(accent?: string, motion?: string): void {
