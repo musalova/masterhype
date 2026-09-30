@@ -11,7 +11,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SRC = join(root, 'logo', 'Gemini_Generated_Image_phv873phv873phv8.jpg');
+const SRC = join(root, 'logo', 'masterhype.svg');
 // Stesso crop di make-icon.mjs (centro ≈ (1046,1000), anello ≈ 82% del tile)
 const TILE = { left: 266, top: 220, width: 1560, height: 1560 };
 
@@ -65,74 +65,57 @@ async function render(svg, w, h, layers = []) {
 // ── Sidebar 164x314: discoteca — orbe neon, griglia synthwave, forme wireframe ──
 const sidebarSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="164" height="314" viewBox="0 0 164 314">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0.7" y2="1">
-      <stop offset="0" stop-color="#0a0c0d"/>
-      <stop offset="0.55" stop-color="#0d1718"/>
-      <stop offset="1" stop-color="#0f211e"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#172b2e"/><stop offset=".55" stop-color="#10191c"/><stop offset="1" stop-color="#090e10"/>
     </linearGradient>
-    <linearGradient id="bar" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="#2dd4bf"/><stop offset="1" stop-color="#ff9e3d"/>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#79e2cb"/><stop offset="1" stop-color="#efb18a"/>
     </linearGradient>
-    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="16"/>
-    </filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="22"/></filter>
   </defs>
   <rect width="164" height="314" fill="url(#bg)"/>
   <!-- orbe neon sfocate -->
-  <circle cx="140" cy="60" r="70" fill="#2dd4bf" opacity="0.30" filter="url(#soft)"/>
-  <circle cx="10" cy="240" r="75" fill="#ff9e3d" opacity="0.26" filter="url(#soft)"/>
-  <circle cx="120" cy="300" r="60" fill="#2dd4bf" opacity="0.10" filter="url(#soft)"/>
+  <circle cx="135" cy="25" r="70" fill="#79e2cb" opacity=".08" filter="url(#soft)"/>
   <!-- griglia synthwave prospettica in basso -->
-  <g opacity="0.35">
-    <line x1="-40" y1="314" x2="60" y2="220" stroke="#2dd4bf" stroke-width="1" opacity="0.5"/>
-    <line x1="10" y1="314" x2="75" y2="220" stroke="#2dd4bf" stroke-width="1" opacity="0.4"/>
-    <line x1="60" y1="314" x2="88" y2="220" stroke="#ff9e3d" stroke-width="1" opacity="0.4"/>
-    <line x1="110" y1="314" x2="102" y2="220" stroke="#ff9e3d" stroke-width="1" opacity="0.35"/>
-    <line x1="160" y1="314" x2="116" y2="220" stroke="#2dd4bf" stroke-width="1" opacity="0.3"/>
-    <line x1="0" y1="248" x2="164" y2="248" stroke="#2dd4bf" stroke-width="1" opacity="0.35"/>
-    <line x1="0" y1="272" x2="164" y2="272" stroke="#ff9e3d" stroke-width="1" opacity="0.3"/>
-    <line x1="0" y1="296" x2="164" y2="296" stroke="#2dd4bf" stroke-width="1" opacity="0.25"/>
-  </g>
+  <path d="M22 241h120" stroke="#79e2cb" stroke-opacity=".2" stroke-width=".5"/>
   <!-- forme geometriche wireframe -->
-  <polygon points="20,200 42,238 -2,238" fill="none" stroke="#2dd4bf" stroke-width="1.5" opacity="0.55"/>
-  <rect x="126" y="196" width="26" height="26" rx="4" fill="none" stroke="#ff9e3d" stroke-width="1.5" opacity="0.5" transform="rotate(14 139 209)"/>
-  <circle cx="30" cy="90" r="16" fill="none" stroke="#2dd4bf" stroke-width="1.5" opacity="0.35"/>
-  <!-- logo raster composto da sharp (76x76 a x44,y40) -->
-  <text x="82" y="146" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif"
-    font-size="19" font-weight="700" fill="#f2f2f8">Master<tspan fill="#ff9e3d">Hype</tspan></text>
-  <text x="82" y="164" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif"
-    font-size="9.5" fill="#a9c6c0">La tua musica, il tuo CD</text>
-  <!-- equalizzatore neon -->
-  <g transform="translate(58,180)" opacity="0.95">
-    <rect x="0" y="8" width="5" height="12" rx="1.5" fill="url(#bar)"/>
-    <rect x="9" y="0" width="5" height="20" rx="1.5" fill="url(#bar)"/>
-    <rect x="18" y="5" width="5" height="15" rx="1.5" fill="url(#bar)"/>
-    <rect x="27" y="2" width="5" height="18" rx="1.5" fill="url(#bar)"/>
-    <rect x="36" y="10" width="5" height="10" rx="1.5" fill="url(#bar)"/>
+  <g fill="none" stroke="#79e2cb" stroke-width=".5">
+    <circle cx="159" cy="320" r="62" opacity=".18"/><circle cx="159" cy="320" r="84" opacity=".14"/>
+    <circle cx="159" cy="320" r="106" opacity=".1"/><circle cx="159" cy="320" r="128" opacity=".07"/>
   </g>
+  <!-- logo raster composto da sharp (76x76 a x44,y40) -->
+  <text x="22" y="139" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600" letter-spacing="-.7" fill="#f2f6f5">Master<tspan fill="#79e2cb">Hype</tspan></text>
+  <text x="22" y="164" font-family="Segoe UI, Arial, sans-serif" font-size="12" fill="#f2f6f5">Musica,</text>
+  <text x="22" y="181" font-family="Segoe UI, Arial, sans-serif" font-size="12" fill="#f2f6f5">a modo tuo.</text>
+  <text x="22" y="210" font-family="Segoe UI, Arial, sans-serif" font-size="8" fill="#a5b7b7">Scopri. Ascolta. Porta con te.</text>
+  <text x="22" y="261" font-family="Segoe UI, Arial, sans-serif" font-size="7" letter-spacing="1.3" fill="#a5b7b7">PC / TELEFONO / CD</text>
+  <!-- equalizzatore neon -->
+  <rect x="22" y="284" width="28" height="2" rx="1" fill="url(#bar)"/>
+  <text x="22" y="302" font-family="Segoe UI, Arial, sans-serif" font-size="6.5" letter-spacing="1" fill="#a5b7b7">IL TUO UNIVERSO MUSICALE</text>
 </svg>`;
 
 // ── Header 150x57: discoteca scura, tile logo + wordmark ──
 const headerSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="57" viewBox="0 0 150 57">
   <defs>
     <linearGradient id="hbg" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#0d1617"/><stop offset="1" stop-color="#0f211e"/>
+      <stop offset="0" stop-color="#10191c"/><stop offset="1" stop-color="#1b3034"/>
     </linearGradient>
     <filter id="hsoft" x="-40%" y="-40%" width="180%" height="180%">
       <feGaussianBlur stdDeviation="10"/>
     </filter>
   </defs>
   <rect width="150" height="57" fill="url(#hbg)"/>
-  <circle cx="140" cy="8" r="34" fill="#2dd4bf" opacity="0.3" filter="url(#hsoft)"/>
-  <circle cx="10" cy="52" r="30" fill="#ff9e3d" opacity="0.24" filter="url(#hsoft)"/>
+  <circle cx="148" cy="6" r="34" fill="none" stroke="#79e2cb" stroke-opacity=".15"/>
+  <circle cx="148" cy="6" r="47" fill="none" stroke="#79e2cb" stroke-opacity=".08"/>
   <!-- logo raster composto da sharp (40x40 a x55,y8) -->
-  <text x="75" y="52" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif"
-    font-size="8" font-weight="600" fill="#c4d8d3">MasterHype</text>
+  <text x="52" y="27" font-family="Segoe UI, Arial, sans-serif"
+    font-size="12" font-weight="600" letter-spacing="-.4" fill="#f2f6f5">Master<tspan fill="#79e2cb">Hype</tspan></text>
+  <text x="52" y="39" font-family="Segoe UI, Arial, sans-serif" font-size="6.5" fill="#a5b7b7">Musica, a modo tuo.</text>
 </svg>`;
 
 mkdirSync(join(root, 'build'), { recursive: true });
 writeFileSync(join(root, 'build', 'installerSidebar.bmp'),
-  await render(sidebarSvg, 164, 314, [{ input: await logoTile(76), left: 44, top: 40 }]));
+  await render(sidebarSvg, 164, 314, [{ input: await logoTile(76), left: 22, top: 28 }]));
 writeFileSync(join(root, 'build', 'installerHeader.bmp'),
-  await render(headerSvg, 150, 57, [{ input: await logoTile(40), left: 55, top: 8 }]));
+  await render(headerSvg, 150, 57, [{ input: await logoTile(38), left: 8, top: 9 }]));
 console.log('OK installer art: sidebar + header');

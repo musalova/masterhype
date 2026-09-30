@@ -1,12 +1,13 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import { FolderInput, RefreshCw, WifiOff, X } from 'lucide-react';
 import { useApp } from './store';
 import { api, isRemote } from './api';
 import { isOnline, onConnectivity, onReconnected, retryNow, setLocalUserId, hasRemoteConf, pcFreshAt } from './remote';
 import { drainPending, pendingCount } from './pendingSync';
 import { drainFieldDiag } from './fieldDiag';
-import { syncPrefs } from './persist';
+import { syncPrefs, usePersistedState } from './persist';
+import { MOTION_KEY } from './appearance';
 import { initNativeMedia, crashResume } from './nativeMedia';
 import { handleBack } from './backStack';
 import Sidebar from './components/Sidebar';
@@ -14,7 +15,7 @@ import PlayerBar from './components/PlayerBar';
 import UpdateCard from './components/UpdateCard';
 import WhatsNewCard from './components/WhatsNewCard';
 import { checkUpdate, initDesktopUpdate } from './update';
-import { Toasts, SkeletonRows, ScreenErrorBoundary } from './components/common';
+import { Toasts, ScreenLoader, ScreenErrorBoundary } from './components/common';
 import Backdrop from './components/Backdrop';
 
 // Code-splitting: ogni schermata è un chunk separato → avvio più veloce
@@ -97,6 +98,7 @@ export default function App() {
   const loadSettings = useApp((s) => s.loadSettings);
   const loadLibrary = useApp((s) => s.loadLibrary);
   const Screen = screens[screen];
+  const [motionPref] = usePersistedState<'on' | 'off'>(MOTION_KEY, 'on');
 
   useEffect(() => {
     // Profilo attivo: il server lo sa già (header X-MH-User su remoto,
@@ -301,17 +303,18 @@ export default function App() {
   }), []);
 
   return (
-    <div className="h-full flex flex-col">
+    <MotionConfig reducedMotion={motionPref === 'off' ? 'always' : 'user'}>
+    <div className="app-shell h-full flex flex-col">
       <Backdrop />
       {/* Banner offline solo se un PC ESISTE e non risponde: in modalità
           senza PC non c'è nessuno da "ritrovare" — il banner mentirebbe */}
       {isRemote() && hasRemoteConf() && <OfflineBanner />}
-      <div className="flex-1 flex min-h-0 relative z-[1]">
+      <div className="app-workspace flex-1 flex min-h-0 relative z-[1]">
         <Sidebar />
-        <main className="flex-1 min-w-0">
+        <main className="app-main flex-1 min-w-0" aria-label="Contenuto principale">
           {/* Suspense FUORI da AnimatePresence: se la schermata lazy sospende,
               mode="wait" resterebbe bloccato sulla schermata vecchia per sempre */}
-          <Suspense fallback={<div className="p-4 md:p-8"><SkeletonRows n={8} /></div>}>
+          <Suspense fallback={<ScreenLoader screen={screen} />}>
             <AnimatePresence mode="wait">
               <motion.div key={screen} className="h-full"
                 initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
@@ -326,7 +329,7 @@ export default function App() {
       <PlayerBar />
       {/* Stack flottante delle card di sistema: novità post-update sopra,
           card aggiornamento sotto — si impilano se compaiono insieme */}
-      <div className="fixed bottom-24 left-4 right-4 sm:left-auto sm:right-4 sm:w-80 z-[70] flex flex-col gap-3">
+      <div className="system-cards fixed bottom-24 left-4 right-4 sm:left-auto sm:right-4 sm:w-80 z-[70] flex flex-col gap-3">
         <WhatsNewCard />
         <UpdateCard />
       </div>
@@ -346,5 +349,6 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
+    </MotionConfig>
   );
 }

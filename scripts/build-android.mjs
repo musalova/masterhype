@@ -12,6 +12,7 @@ import { join } from 'path';
 
 const root = join(import.meta.dirname, '..');
 const env = { ...process.env };
+const local = process.argv.includes('--local');
 
 const jdkMajor = (home) => {
   if (!home) return 0;
@@ -61,7 +62,7 @@ const run = (cmd, args, cwd = root) => {
 // a package.json.
 const gradlePath = join(root, 'android', 'app', 'build.gradle');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-{
+if (!local) {
   const g = readFileSync(gradlePath, 'utf8');
   const vc = parseInt(/versionCode\s+(\d+)/.exec(g)?.[1] ?? '0', 10);
   const g2 = g
@@ -122,7 +123,7 @@ const man = {
   notes: (whatsNew[pkg.version] ?? []).join('\n') || undefined,
   ytClients,
 };
-const targets = [
+const targets = local ? [join(root, 'release', 'design-preview'), join(root, 'build', 'apk-preview')] : [
   join(root, 'release'),
   join(root, 'build', 'apk'), // incluso nell'installer EXE (extraResources → resources/apk)
   join(process.env.APPDATA ?? '', 'masterhype', 'apk'),
@@ -136,4 +137,4 @@ for (const dir of targets) {
     console.log('pubblicato in', dir);
   } catch (e) { console.warn('copia fallita in', dir, e.message); }
 }
-console.log('\nAPK pronto:', join(root, 'release', man.file), `(${Math.round(man.size / 1e6)} MB, sha256 ${sha.slice(0, 12)}…)`);
+console.log('\nAPK pronto:', join(targets[0], man.file), `(${Math.round(man.size / 1e6)} MB, sha256 ${sha.slice(0, 12)}…)`);

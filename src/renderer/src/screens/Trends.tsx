@@ -6,7 +6,7 @@ import { useApp } from '../store';
 import { usePersistedState } from '../persist';
 import TrackRow from '../components/TrackRow';
 import { CoverImg } from '../components/CoverImg';
-import { SectionTitle, Empty, SkeletonRows } from '../components/common';
+import { SectionTitle, Empty, LoadingState } from '../components/common';
 import type { TrendItem, TrackRef } from '../../../shared/types';
 import { cachedTrends, cacheTrends, offlineTrends } from '../offlineRec';
 
@@ -19,7 +19,7 @@ const cleanTitle = (t: string) => t
 // `embedded`: renderizzato dentro Cerca (tab "Trend") — niente padding/scroll proprio
 export default function Trends({ embedded = false }: { embedded?: boolean }) {
   const [items, setItems] = useState<TrendItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = usePersistedState<'all' | 'niche'>('mh-pref-trendtab', 'all');
   const { toast, seedSearch } = useApp();
 
@@ -66,12 +66,8 @@ export default function Trends({ embedded = false }: { embedded?: boolean }) {
           </div>
         } />
 
-      {loading && !items.length && (
-        <div className="space-y-4">
-          <div className="text-dim text-sm flex items-center gap-2"><div className="eq"><i /><i /><i /></div> Scansione in corso su YouTube Music, Deezer, Last.fm, Spotify…</div>
-          <SkeletonRows n={8} />
-        </div>
-      )}
+      {loading && <LoadingState label={items.length ? 'Aggiorno le tendenze…' : 'Cerco cosa sta salendo…'}
+        detail="Raccolgo le classifiche e le novità disponibili." layout={items.length ? 'inline' : 'rows'} n={8} />}
 
       {!loading && shown.length === 0 && (
         <Empty icon={<TrendingUp size={36} />}

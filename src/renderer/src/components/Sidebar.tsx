@@ -141,30 +141,31 @@ export default function Sidebar() {
   // es. in Trend resta accesa "Cerca"; senza PC l'assistente è voce primaria
   const activeId = screen === 'assistant' && isStandalone() ? 'assistant' : PARENT[screen] ?? screen;
   const itemCls = (id: Screen) =>
-    `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 relative shrink-0
-     max-md:flex-col max-md:gap-0.5 max-md:px-1 max-md:py-1.5 max-md:text-[10px] max-md:flex-1 max-md:min-w-0 max-md:justify-center
-     ${activeId === id
-      ? 'bg-gradient-to-r from-accent/15 to-transparent text-txt before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-accent before:shadow-[0_0_10px_1px_var(--color-accent)] max-md:before:left-3 max-md:before:right-3 max-md:before:top-auto max-md:before:bottom-0 max-md:before:w-auto max-md:before:h-[3px]'
-      : 'text-dim hover:text-txt hover:bg-panel2/60'}`;
+    `nav-item w-full max-md:w-auto flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-colors duration-150 relative shrink-0
+     max-md:flex-col max-md:px-1 max-md:py-1.5 max-md:text-[10px] max-md:flex-1 max-md:min-w-0 max-md:justify-center
+     ${activeId === id ? 'text-accent' : 'text-dim hover:text-txt hover:bg-panel2/60'}`;
 
   return (
     // Desktop: colonna laterale 224px — Mobile: barra inferiore fissa con icone
-    <div className="w-56 bg-panel border-r border-line flex flex-col py-4 shrink-0
+    <div className="app-sidebar w-56 bg-panel border-r border-line flex flex-col py-4 shrink-0
       max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-40
       max-md:w-auto max-md:flex-row max-md:items-center max-md:py-0 max-md:h-[60px]
       max-md:border-r-0 max-md:border-t max-md:px-1
       max-md:pb-[env(safe-area-inset-bottom)]">
-      <div className="px-5 pb-6 flex items-center gap-2.5 max-md:hidden">
-        <Logo size={26} />
-        <span className="font-bold text-lg tracking-tight">Master<span className="neon-text">Hype</span></span>
+      <div className="sidebar-brand flex items-center gap-2.5 max-md:hidden">
+        <Logo size={38} />
+        <div>
+          <span className="font-semibold text-[17px] tracking-[-0.05em]">Master<span className="text-accent">Hype</span></span>
+          <div className="text-[9px] text-dim tracking-[0.16em] uppercase mt-0.5">Musica, a modo tuo.</div>
+        </div>
       </div>
       {/* 6 voci: su mobile stanno tutte in una riga, niente scroll nascosto */}
-      <nav ref={navRef} className="flex-1 space-y-0.5 px-2 max-md:flex max-md:items-stretch max-md:space-y-0 max-md:px-0.5 max-md:py-1">
+      <nav ref={navRef} aria-label="Navigazione principale" className="flex-1 space-y-1 px-2 max-md:flex max-md:items-stretch max-md:space-y-0 max-md:px-0.5 max-md:py-1">
         {/* Senza PC il masterizzatore non esiste: al posto di "CD" l'assistente
             scalette (funziona anche sul telefono da solo) */}
         {(isStandalone() ? items.map((i) => (i.id === 'cd' ? { id: 'assistant' as Screen, label: 'Assistente', icon: Sparkles } : i)) : items).map(({ id, label, icon: Icon }) => (
-          <button key={id} data-active={activeId === id ? 1 : 0} onClick={() => nav(id)} className={itemCls(id)}>
-            <Icon size={18} className={activeId === id ? 'text-accent drop-shadow-[0_0_6px_var(--color-accent)]' : ''} />
+          <button key={id} data-active={activeId === id ? 1 : 0} aria-current={activeId === id ? 'page' : undefined} onClick={() => nav(id)} className={itemCls(id)}>
+            <Icon size={18} className={activeId === id ? 'text-accent' : ''} />
             <span className="flex-1 text-left max-md:flex-none max-md:text-center max-md:leading-none truncate max-md:max-w-full">{label}</span>
             {id === 'cd' && cdCount > 0 && (
               <span className="text-[10px] bg-accent text-white rounded-full px-1.5 py-0.5 font-bold max-md:absolute max-md:top-0.5 max-md:right-1/2 max-md:translate-x-4">{cdCount}</span>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Disc3, Heart, ThumbsDown, Shuffle, Repeat, Repeat1, ListMusic, Radio, Waves, ChevronUp, Loader2 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
@@ -551,7 +551,7 @@ export default function PlayerBar() {
   };
 
   return (
-    <div className="h-20 bg-panel/95 backdrop-blur flex items-center gap-4 px-4 shrink-0 relative
+    <div className="player-bar h-20 flex items-center gap-4 px-4 shrink-0 relative
       max-md:h-[64px] max-md:px-2 max-md:gap-2 max-md:mb-[60px]
       before:absolute before:top-0 before:left-0 before:right-0 before:h-px
       before:bg-gradient-to-r before:from-transparent before:via-accent/40 before:to-transparent">
@@ -599,7 +599,7 @@ export default function PlayerBar() {
             icon={<Disc3 size={22} className={`text-dim ${player.playing ? 'spin-slow text-accent' : ''}`} />} />
         </button>
         <div className="min-w-0 flex-1" onClick={() => cur && setNpOpen(true)} role="button">
-          <div className="text-sm font-semibold truncate">{cur?.title ?? '—'}</div>
+          <div className="text-sm font-semibold truncate">{cur?.title ?? 'Il prossimo ascolto ti aspetta'}</div>
           <div className={`text-xs truncate ${loading && phaseLabel ? 'text-accent/80' : 'text-dim'}`}>
             {loading && phaseLabel ? phaseLabel : (cur?.artist ?? 'Nessuna traccia')}
           </div>
@@ -620,17 +620,17 @@ export default function PlayerBar() {
       </div>
 
       <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0 max-md:flex-none">
-        <div className="flex items-center gap-4 max-md:gap-5">
+        <div className="player-controls flex items-center gap-4">
           <button onClick={toggleShuffle} title="Riproduzione casuale"
             className={`transition-colors max-md:hidden ${player.shuffle ? 'text-accent' : 'text-dim hover:text-txt'}`}>
             <Shuffle size={15} />
           </button>
-          <button onClick={goPrev} className="text-dim hover:text-txt"><SkipBack size={18} /></button>
-          <button onClick={toggle} disabled={!cur}
-            className={`w-10 h-10 rounded-full bg-gradient-to-br from-accent to-accent2 text-white flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-40 shadow-lg shadow-accent/30 ${player.playing ? 'neon-play' : ''}`}>
+          <button onClick={goPrev} aria-label="Brano precedente" className="text-dim hover:text-txt"><SkipBack size={18} /></button>
+          <button onClick={toggle} disabled={!cur} aria-label={player.playing ? 'Pausa' : 'Riproduci'}
+            className={`player-play rounded-full flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-40 ${player.playing ? 'neon-play' : ''}`}>
             {loading ? <Loader2 size={18} className="animate-spin" /> : player.playing ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
           </button>
-          <button onClick={skipNext} className="text-dim hover:text-txt"><SkipForward size={18} /></button>
+          <button onClick={skipNext} aria-label="Brano successivo" className="text-dim hover:text-txt"><SkipForward size={18} /></button>
           <button onClick={cycleRepeat}
             title={player.repeat === 'one' ? 'Ripeti brano' : player.repeat === 'all' ? 'Ripeti tutto' : 'Ripetizione off'}
             className={`transition-colors max-md:hidden ${player.repeat !== 'off' ? 'text-accent' : 'text-dim hover:text-txt'}`}>
@@ -644,7 +644,8 @@ export default function PlayerBar() {
         </div>
         <div className="w-full max-w-xl flex items-center gap-2 text-[11px] text-dim max-md:hidden">
           <span className="w-8 text-right">{fmt(time)}</span>
-          <input type="range" min={0} max={dur || 0} step={0.5} value={time}
+          <input aria-label="Posizione nel brano" type="range" min={0} max={dur || 0} step={0.5} value={time}
+            style={{ '--range-pct': `${dur ? Math.min(100, Math.max(0, time / dur * 100)) : 0}%` } as CSSProperties}
             onChange={(e) => { const a = el(); if (a) a.currentTime = +e.target.value; }}
             className="flex-1 h-1 accent-[--color-accent] cursor-pointer" />
           <span className="w-8">{fmt(dur)}</span>
@@ -688,7 +689,8 @@ export default function PlayerBar() {
         <button onClick={() => setMuted(!muted)} className="text-dim hover:text-txt max-md:hidden">
           {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
         </button>
-        <input type="range" min={0} max={1} step={0.05} value={muted ? 0 : player.volume}
+        <input aria-label="Volume" type="range" min={0} max={1} step={0.05} value={muted ? 0 : player.volume}
+          style={{ '--range-pct': `${muted ? 0 : player.volume * 100}%` } as CSSProperties}
           onChange={(e) => {
             setMuted(false);
             setVolume(+e.target.value);

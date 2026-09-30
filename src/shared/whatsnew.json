@@ -1,4 +1,10 @@
 {
+  "0.5.7": [
+    "Nuovo look completo: interfaccia più curata, nove temi e nuove icone su PC e telefono",
+    "La schermata di avvio resta aperta finché l'app è davvero pronta e ti fa riprovare se qualcosa va storto",
+    "Caricamenti più chiari in ricerca, libreria, playlist, stazioni e assistente",
+    "Correzioni di layout su telefono e tablet"
+  ],
   "0.5.6": [
     "I download tengono l'audio originale: il volume si uniforma in riproduzione, il file non viene più alterato",
     "Il taglio dei silenzi a inizio/fine brano è spento di default (poteva tagliare intro voluti) — riattivabile in Impostazioni",

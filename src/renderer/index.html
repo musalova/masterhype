@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="theme-color" content="#090e10" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -17,56 +17,49 @@
     <title>MasterHype</title>
     <style>
       #splash {
-        position: fixed; inset: 0; z-index: 9999;
-        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
-        background:
-          radial-gradient(600px 380px at 78% 18%, rgba(45,212,191,.14), transparent 65%),
-          radial-gradient(520px 340px at 16% 82%, rgba(255,158,61,.12), transparent 65%),
-          radial-gradient(400px 300px at 50% 110%, rgba(45,212,191,.07), transparent 65%),
-          #0a0a0b;
-        font-family: 'Segoe UI', system-ui, sans-serif;
-        transition: opacity .5s ease;
+        position: fixed; inset: 0; z-index: 9999; box-sizing: border-box; padding: 24px;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        background: radial-gradient(ellipse at 50% 38%, var(--color-panel2, #17302e), transparent 65%), var(--color-bg, #090e10);
+        color: var(--color-txt, #f2f6f5); font-family: 'Inter Variable', 'Segoe UI', system-ui, sans-serif; text-align: center;
+        transition: opacity .3s ease;
       }
-      #splash .eq { display: flex; gap: 5px; align-items: flex-end; height: 26px; }
-      #splash .eq i {
-        width: 5px; height: 26px; border-radius: 2px;
-        background: linear-gradient(to top, #2dd4bf, #ff9e3d);
-        box-shadow: 0 0 10px rgba(45,212,191,.5);
-        animation: splash-eq 1s ease-in-out infinite; transform-origin: bottom;
-      }
-      #splash .eq i:nth-child(2) { animation-delay: .15s; }
-      #splash .eq i:nth-child(3) { animation-delay: .32s; }
-      #splash .eq i:nth-child(4) { animation-delay: .08s; }
-      #splash .eq i:nth-child(5) { animation-delay: .24s; }
-      @keyframes splash-eq { 0%,100% { transform: scaleY(.25); } 50% { transform: scaleY(1); } }
       #splash.out { opacity: 0; pointer-events: none; }
-      #splash .logo { animation: splash-in .7s cubic-bezier(.2,.9,.3,1.3) both; border-radius: 22%; }
-      #splash .name {
-        font-size: 26px; font-weight: 800; letter-spacing: -.5px; color: #f2f2f8;
-        animation: splash-in .7s .15s cubic-bezier(.2,.9,.3,1.3) both;
-      }
-      #splash .name b { color: #ff9e3d; font-weight: 800; }
-      #splash .bar {
-        width: 160px; height: 3px; border-radius: 2px; overflow: hidden;
-        background: #1a1a26; animation: splash-in .5s .35s ease both;
-      }
-      #splash .bar i {
-        display: block; height: 100%; width: 40%; border-radius: 2px;
-        background: linear-gradient(90deg, #2dd4bf, #ff9e3d);
-        animation: splash-bar 1.1s ease-in-out infinite;
-      }
-      #splash .pulse { animation: splash-pulse 1.6s .6s ease-in-out infinite; }
-      @keyframes splash-in { from { opacity: 0; transform: translateY(14px) scale(.92); } to { opacity: 1; transform: none; } }
-      @keyframes splash-bar { 0% { transform: translateX(-110%);} 100% { transform: translateX(400%);} }
-      @keyframes splash-pulse { 0%,100% { filter: drop-shadow(0 0 0 rgba(45,212,191,0)); } 50% { filter: drop-shadow(0 0 18px rgba(45,212,191,.45)); } }
+      #splash .boot-mark { position: relative; width: 132px; height: 132px; display: grid; place-items: center; margin-bottom: 10px; }
+      #splash .boot-mark::before, #splash .boot-mark::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--color-line, #2c3c40); }
+      #splash .boot-mark::after { border-color: transparent; border-top-color: var(--color-accent, #79e2cb); animation: boot-orbit 5s linear infinite; }
+      #splash .logo { border-radius: 22%; filter: drop-shadow(0 12px 32px #0005); }
+      #splash .name { font-size: 28px; font-weight: 650; letter-spacing: -1px; }
+      #splash .name b { color: var(--color-accent, #79e2cb); font-weight: 650; }
+      #splash .tagline { color: var(--color-dim, #a5b7b7); font-size: 10px; letter-spacing: .2em; text-transform: uppercase; }
+      #splash .bar { margin-top: 18px; width: 120px; height: 2px; border-radius: 2px; overflow: hidden; background: var(--color-line, #263c3c); }
+      #splash .bar i { display: block; height: 100%; width: 40%; border-radius: 2px; background: var(--color-accent, #79e2cb); animation: splash-bar 1.8s ease-in-out infinite; }
+      #boot-status { margin: 0; min-height: 36px; max-width: 300px; font-size: 12px; line-height: 1.6; color: var(--color-dim, #a5b7b7); }
+      #splash .boot-help { visibility: hidden; position: absolute; bottom: max(32px, env(safe-area-inset-bottom)); left: 24px; right: 24px; font-size: 12px; color: var(--color-dim, #a5b7b7); animation: boot-help 0s 12s forwards; }
+      #splash .boot-help p { margin: 0 0 10px; }
+      #splash .boot-retry { display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--color-line, #2c3c40); color: var(--color-accent, #79e2cb); text-decoration: none; }
+      #splash .boot-retry:hover, #splash .boot-retry:focus-visible { border-color: var(--color-accent, #79e2cb); outline: 2px solid var(--color-accent, #79e2cb); outline-offset: 3px; }
+      #splash[data-state='error'] .boot-help { visibility: visible; animation: none; }
+      #splash[data-state='error'] .bar { visibility: hidden; }
+      #splash[data-state='error'] .boot-mark::after { animation: none; border-top-color: var(--color-accent2, #efb18a); }
+      @keyframes boot-orbit { to { transform: rotate(360deg); } }
+      @keyframes boot-help { to { visibility: visible; } }
+      @keyframes splash-bar { 0% { transform: translateX(-110%); } 100% { transform: translateX(400%); } }
+      @media (max-height: 540px) { #splash { gap: 8px; padding-bottom: 88px; } #splash .boot-mark { width: 80px; height: 80px; margin: 0; } #splash .logo { width: 56px; height: 56px; } #splash .bar { margin-top: 8px; } #splash .boot-help { bottom: 12px; } }
+      @media (prefers-reduced-motion: reduce) { #splash, #splash * { animation: none !important; transition: none !important; } #splash .boot-mark::after { animation: none !important; } #splash .boot-help { visibility: visible; } }
     </style>
   </head>
   <body>
-    <div id="splash">
-      <img class="logo pulse" src="./icon-192.png" width="72" height="72" alt="" />
+    <div id="splash" aria-label="Avvio di MasterHype">
+      <div class="boot-mark" aria-hidden="true"><img class="logo" src="./icon-192.png" width="80" height="80" alt="" /></div>
       <div class="name">Master<b>Hype</b></div>
-      <div class="eq"><i></i><i></i><i></i><i></i><i></i></div>
-      <div class="bar"><i></i></div>
+      <div class="tagline">Musica, a modo tuo.</div>
+      <div class="bar" aria-hidden="true"><i></i></div>
+      <p id="boot-status" role="status" aria-live="polite">Apro il tuo spazio musicale…</p>
+      <div class="boot-help">
+        <p>Se l’avvio non prosegue, puoi riprovare.</p>
+        <a class="boot-retry" href="./index.html">Ricarica l’app</a>
+      </div>
+      <noscript>Per aprire MasterHype è necessario abilitare JavaScript.</noscript>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

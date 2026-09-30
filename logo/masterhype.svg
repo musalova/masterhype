@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 2048 2048">
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#1b3034"/><stop offset=".48" stop-color="#10191c"/><stop offset="1" stop-color="#090e10"/>
+    </linearGradient>
+    <linearGradient id="signature" x1=".08" y1=".25" x2=".96" y2=".7">
+      <stop stop-color="#79e2cb"/><stop offset=".44" stop-color="#a9e6d2"/><stop offset=".72" stop-color="#e9d2ac"/><stop offset="1" stop-color="#efb18a"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#79e2cb" stop-opacity=".8"/><stop offset=".5" stop-color="#bbd8c4" stop-opacity=".15"/><stop offset="1" stop-color="#efb18a" stop-opacity=".7"/>
+    </linearGradient>
+    <radialGradient id="light" cx=".22" cy=".12" r=".95">
+      <stop stop-color="#79e2cb" stop-opacity=".12"/><stop offset="1" stop-color="#79e2cb" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path fill="url(#surface)" d="M0 0h2048v2048H0z"/>
+  <path fill="url(#light)" d="M0 0h2048v2048H0z"/>
+  <circle cx="1046" cy="1000" r="628" fill="#090e10" fill-opacity=".3" stroke="url(#edge)" stroke-width="7"/>
+  <circle cx="1046" cy="1000" r="590" fill="none" stroke="#d5e5df" stroke-opacity=".07" stroke-width="2"/>
+  <circle cx="1046" cy="1000" r="550" fill="none" stroke="#d5e5df" stroke-opacity=".045" stroke-width="2"/>
+  <path d="M418 1000a628 628 0 0 1 628-628" fill="none" stroke="#79e2cb" stroke-width="13" stroke-linecap="round"/>
+  <path d="M1674 1000a628 628 0 0 1-628 628" fill="none" stroke="#efb18a" stroke-width="13" stroke-linecap="round"/>
+  <path d="M626 1180V820l205 225 205-225v360m140-360v360m270-360v360m-270-180h270" fill="none" stroke="#000" stroke-opacity=".2" stroke-width="98" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 14)"/>
+  <path d="M626 1180V820l205 225 205-225v360m140-360v360m270-360v360m-270-180h270" fill="none" stroke="url(#signature)" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m1022 1340 77 44-77 44z" fill="url(#signature)"/>
+  <path d="M992 632h108" stroke="#afc5bf" stroke-opacity=".6" stroke-width="7" stroke-linecap="round"/>
+</svg>

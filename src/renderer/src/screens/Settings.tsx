@@ -9,7 +9,7 @@ import { normalizeFeed } from '../../../shared/updateFeed';
 import { runSelfTest, selfTestVerdict, type SelfTestReport } from '../selftest';
 import { useApp } from '../store';
 import { queueSettings, queuePlOp } from '../pendingSync';
-import { SectionTitle, BackLink, Skeleton } from '../components/common';
+import { SectionTitle, BackLink, Skeleton, LoadingState } from '../components/common';
 import { usePersistedState } from '../persist';
 import { ACCENTS, ACCENT_KEY, MOTION_KEY, applyAppearance, type AccentId } from '../appearance';
 import type { Settings, IssueStats, AppInfo, MhDevice } from '../../../shared/types';
@@ -31,24 +31,35 @@ function AppearanceCard() {
   const [motion, setMotion] = usePersistedState<'on' | 'off'>(MOTION_KEY, 'on');
   useEffect(() => applyAppearance(accent, motion), [accent, motion]);
   return (
-    <div className="bg-panel border border-line rounded-xl px-5 mb-6">
-      <div className="py-3 text-xs font-bold text-dim uppercase tracking-wider border-b border-line/50">Aspetto</div>
-      <Row label="Colore" sub="Il colore dell'app — pulsanti, aloni, stazioni">
-        <div className="flex gap-2">
-          {ACCENTS.map((a) => (
-            <button key={a.id} onClick={() => setAccent(a.id)} title={a.name}
-              className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 flex items-center justify-center
-                ${accent === a.id ? 'border-white scale-110' : 'border-transparent'}`}
-              style={{ background: `linear-gradient(135deg, ${a.c1}, ${a.c2})` }}>
-              {accent === a.id && <Check size={13} className="text-white drop-shadow" />}
-            </button>
-          ))}
-        </div>
+    <section className="appearance-card bg-panel border border-line rounded-2xl p-4 sm:p-6 mb-6" aria-labelledby="appearance-title">
+      <div className="eyebrow mb-2">Il tuo spazio, il tuo stile</div>
+      <h3 id="appearance-title" className="text-xl font-semibold tracking-tight">Un’atmosfera per ogni ascolto.</h3>
+      <p className="text-sm text-dim mt-2 max-w-lg leading-relaxed">Nove temi completi, dai fondi ai piccoli dettagli. Si applicano subito e seguono il tuo profilo su PC e telefono.</p>
+      <div className="theme-grid" role="group" aria-label="Tema dell’interfaccia">
+        {ACCENTS.map((a) => (
+          <button key={a.id} onClick={() => setAccent(a.id)} aria-pressed={accent === a.id}
+            aria-label={`${a.name} — ${a.desc}`} className="theme-option self-start">
+            <span className="theme-preview" data-accent={a.id} aria-hidden="true">
+              <span className="theme-preview-rail"><i /><i /><i /></span>
+              <span className="theme-preview-content">
+                <span className="theme-preview-hero"><span /><i /></span>
+                <span className="theme-preview-shelf"><i /><i /><i /></span>
+              </span>
+              <span className="theme-preview-player"><i /><span /><b /></span>
+              {accent === a.id && <span className="theme-selected"><Check size={13} strokeWidth={3} /></span>}
+            </span>
+            <span className="flex items-center justify-between gap-2 mt-2.5">
+              <span className="text-[13px] font-semibold">{a.name}</span>
+              {accent === a.id && <span className="text-[10px] text-accent font-medium">Attivo</span>}
+            </span>
+            <span className="block text-[11px] leading-relaxed text-dim mt-0.5">{a.desc}</span>
+          </button>
+        ))}
+      </div>
+      <Row label="Riduci animazioni" sub="Un’esperienza più quieta. Rispettiamo anche la preferenza del dispositivo.">
+        <Toggle label="Riduci animazioni" v={motion === 'off'} onChange={(b) => setMotion(b ? 'off' : 'on')} />
       </Row>
-      <Row label="Riduci animazioni" sub="Spegne sfondo animato ed effetti — utile su PC lenti o per risparmiare batteria">
-        <Toggle v={motion === 'off'} onChange={(b) => setMotion(b ? 'off' : 'on')} />
-      </Row>
-    </div>
+    </section>
   );
 }
 
@@ -64,9 +75,9 @@ function Row({ label, sub, children }: { label: string; sub?: string; children: 
   );
 }
 
-function Toggle({ v, onChange }: { v: boolean; onChange: (b: boolean) => void }) {
+function Toggle({ v, onChange, label }: { v: boolean; onChange: (b: boolean) => void; label?: string }) {
   return (
-    <button onClick={() => onChange(!v)}
+    <button onClick={() => onChange(!v)} role="switch" aria-checked={v} aria-label={label}
       className={`w-10 h-6 rounded-full transition-colors relative ${v ? 'bg-accent' : 'bg-panel2 border border-line'}`}>
       <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${v ? 'left-[18px]' : 'left-0.5'}`} />
     </button>
@@ -743,8 +754,8 @@ export default function Settings() {
     <div className="p-4 md:p-8 overflow-y-auto h-full max-w-3xl">
       <BackLink to="home" label="Home" />
       <SectionTitle title="Impostazioni" />
-      <ProfilesCard />
       <AppearanceCard />
+      <ProfilesCard />
       <div className="bg-panel border border-line rounded-xl px-5 mb-6">
         <div className="py-3 text-xs font-bold text-dim uppercase tracking-wider border-b border-line/50 flex items-center gap-1.5">
           <Smartphone size={13} /> Telefono e tablet
@@ -764,6 +775,7 @@ export default function Settings() {
     <div className="p-4 md:p-8 overflow-y-auto h-full max-w-3xl">
       <BackLink to="home" label="Home" />
       <SectionTitle title="Impostazioni" />
+      <LoadingState label="Recupero le tue impostazioni…" layout="inline" />
       {[4, 2, 3].map((rows, c) => (
         <div key={c} className="bg-panel border border-line rounded-xl px-5 mb-6">
           <Skeleton className="h-3 w-40 my-4" />
@@ -786,8 +798,8 @@ export default function Settings() {
       <BackLink to="home" label="Home" />
       <SectionTitle title="Impostazioni" />
 
-      <ProfilesCard />
       <AppearanceCard />
+      <ProfilesCard />
 
       <div className="bg-panel border border-line rounded-xl px-5 mb-6">
         <div className="py-3 text-xs font-bold text-dim uppercase tracking-wider border-b border-line/50">Libreria e audio</div>

@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle2, AlertTriangle, Info, X, TriangleAlert, ChevronLeft } from 'lucide-react';
-import { Component } from 'react';
+import { Component, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useApp } from '../store';
 import type { Screen } from '../store';
@@ -60,7 +60,7 @@ export class RootErrorBoundary extends Component<{ children: ReactNode }, { err:
 export function Toasts() {
   const toasts = useApp((s) => s.toasts);
   return (
-    <div className="fixed bottom-24 right-4 z-50 space-y-2 w-80">
+    <div className="toast-stack fixed bottom-24 right-4 z-50 space-y-2 w-80" role="status" aria-live="polite">
       <AnimatePresence>
         {toasts.map((t) => (
           <motion.div key={t.id} initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }}
@@ -93,7 +93,7 @@ export function BackLink({ to, label }: { to: Screen; label: string }) {
 
 export function SectionTitle({ title, sub, action }: { title: string; sub?: string; action?: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 mb-3">
+    <div className="section-title flex flex-wrap items-end justify-between gap-x-4 gap-y-2 mb-3">
       <div className="min-w-0">
         <h2 className="text-xl font-bold tracking-tight">{title}</h2>
         {sub && <p className="text-xs text-dim mt-0.5">{sub}</p>}
@@ -105,8 +105,8 @@ export function SectionTitle({ title, sub, action }: { title: string; sub?: stri
 
 export function Empty({ icon, title, sub }: { icon: React.ReactNode; title: string; sub?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="text-dim mb-3">{icon}</div>
+    <div className="empty-state flex flex-col items-center justify-center text-center">
+      <div className="empty-state-icon">{icon}</div>
       <div className="font-semibold">{title}</div>
       {sub && <div className="text-sm text-dim mt-1 max-w-sm">{sub}</div>}
     </div>
@@ -115,18 +115,18 @@ export function Empty({ icon, title, sub }: { icon: React.ReactNode; title: stri
 
 // Skeleton shimmer per i caricamenti (liste di brani, card)
 export function Skeleton({ className = '', style }: { className?: string; style?: React.CSSProperties }) {
-  return <div className={`skeleton rounded-md bg-panel2 ${className}`} style={style} />;
+  return <div aria-hidden="true" className={`skeleton rounded-md bg-panel2 ${className}`} style={style} />;
 }
 
 export function SkeletonRows({ n = 6 }: { n?: number }) {
   return (
-    <div className="bg-panel border border-line rounded-xl divide-y divide-line/50">
+    <div aria-hidden="true" className="bg-panel border border-line rounded-xl divide-y divide-line/50">
       {Array.from({ length: n }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 px-3 py-2.5" style={{ animationDelay: `${i * 70}ms` }}>
-          <Skeleton className="w-9 h-9" />
+        <div key={i} className="flex items-center gap-3 px-3 py-2.5">
+          <Skeleton className="w-10 h-10 rounded-lg shrink-0" />
           <div className="flex-1 space-y-1.5">
-            <Skeleton className="h-3 w-1/3" />
-            <Skeleton className="h-2.5 w-1/5" />
+            <Skeleton className="h-3" style={{ width: `${[48, 65, 37, 56][i % 4]}%` }} />
+            <Skeleton className="h-2.5" style={{ width: `${[28, 36, 22][i % 3]}%` }} />
           </div>
           <Skeleton className="h-3 w-8" />
         </div>
@@ -137,7 +137,7 @@ export function SkeletonRows({ n = 6 }: { n?: number }) {
 
 export function SkeletonCards({ n = 6 }: { n?: number }) {
   return (
-    <div className="flex gap-4 overflow-hidden">
+    <div aria-hidden="true" className="flex gap-4 overflow-hidden">
       {Array.from({ length: n }).map((_, i) => (
         <div key={i} className="w-36 shrink-0 bg-panel border border-line rounded-xl p-3 space-y-2"
           style={{ animationDelay: `${i * 70}ms` }}>
@@ -153,7 +153,7 @@ export function SkeletonCards({ n = 6 }: { n?: number }) {
 // Skeleton per la vista a copertine della Libreria (griglia di poster)
 export function SkeletonGrid({ n = 12 }: { n?: number }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-x-4 gap-y-6">
+    <div aria-hidden="true" className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-x-4 gap-y-6">
       {Array.from({ length: n }).map((_, i) => (
         <div key={i} className="w-full" style={{ animationDelay: `${i * 50}ms` }}>
           <Skeleton className="w-full aspect-square rounded-[10px]" />
@@ -169,13 +169,54 @@ export function SkeletonGrid({ n = 12 }: { n?: number }) {
 
 // Loader centrato a tutta schermata: per i punti in cui non si conosce ancora
 // la forma del contenuto (boot, gate, fallback Suspense delle schermate lazy)
-export function CenterLoader({ label }: { label?: string }) {
+export function CenterLoader({ label = 'Preparo il tuo spazio musicale…' }: { label?: string }) {
+  return <div className="h-full min-h-[200px] flex items-center justify-center p-6"><LoadingState label={label} layout="center" /></div>;
+}
+
+type LoadingLayout = 'inline' | 'center' | 'rows' | 'cards' | 'grid';
+
+export function LoadingState({ label, detail, layout = 'rows', n = 6, onCancel }: {
+  label: string; detail?: string; layout?: LoadingLayout; n?: number; onCancel?: () => void;
+}) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    const timer = setTimeout(() => setSlow(true), 8000);
+    return () => clearTimeout(timer);
+  }, [label, detail]);
   return (
-    <div className="h-full min-h-[200px] flex flex-col items-center justify-center gap-3 text-dim">
-      <div className="eq"><i /><i /><i /><i /></div>
-      {label && <div className="text-sm">{label}</div>}
+    <div className={`loading-state ${layout === 'center' ? 'loading-centered' : ''}`} data-loading="true">
+      <div className="loading-heading">
+        <span className="loading-disc" aria-hidden="true"><i /></span>
+        <div className="min-w-0 flex-1" role="status" aria-live="polite">
+          <div className="loading-label">{label}</div>
+          {detail && <div className="loading-detail">{detail}</div>}
+          {slow && <p className="loading-patience">Sta richiedendo più tempo del solito. La preparazione è ancora in corso.</p>}
+        </div>
+        {onCancel && <button onClick={onCancel} className="loading-cancel">Annulla</button>}
+      </div>
+      {layout === 'rows' && <SkeletonRows n={n} />}
+      {layout === 'cards' && <SkeletonCards n={n} />}
+      {layout === 'grid' && <SkeletonGrid n={n} />}
     </div>
   );
+}
+
+const SCREEN_LOADING: Record<Screen, { label: string; layout: LoadingLayout }> = {
+  home: { label: 'Apro il tuo spazio musicale…', layout: 'cards' },
+  search: { label: 'Preparo la ricerca…', layout: 'cards' },
+  stations: { label: 'Apro le stazioni…', layout: 'grid' },
+  library: { label: 'Apro la tua libreria…', layout: 'rows' },
+  playlists: { label: 'Apro le tue playlist…', layout: 'grid' },
+  cd: { label: 'Preparo il tuo CD…', layout: 'rows' },
+  trends: { label: 'Apro le tendenze…', layout: 'rows' },
+  assistant: { label: 'Preparo l’assistente…', layout: 'rows' },
+  downloads: { label: 'Apro i download…', layout: 'rows' },
+  settings: { label: 'Apro le impostazioni…', layout: 'rows' },
+};
+
+export function ScreenLoader({ screen }: { screen: Screen }) {
+  return <div className="p-4 md:p-8 h-full overflow-hidden"><LoadingState {...SCREEN_LOADING[screen]} /></div>;
 }
 
 export function ProgressBar({ pct, label }: { pct: number; label?: string }) {

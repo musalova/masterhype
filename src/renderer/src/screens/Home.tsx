@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Disc3, TrendingUp, Music2, Flame, Play, Wand2, ArrowRight, Radio, Plus, Heart, Zap, AudioLines, ListMusic, Settings as SettingsIcon, User, Check, Loader2 } from 'lucide-react';
+import { Sparkles, Disc3, TrendingUp, Music2, Flame, Play, Wand2, ArrowRight, Radio, Plus, Heart, Zap, AudioLines, ListMusic, Settings as SettingsIcon, Search, User, Check, Loader2 } from 'lucide-react';
 import { useApp } from '../store';
 import { api, isRemote } from '../api';
 import { isOnline, resyncWhen, pcGone } from '../remote';
 import { usePersistedState } from '../persist';
 import { Shelf, TrackPoster } from '../components/Shelf';
 import { CoverImg } from '../components/CoverImg';
-import { SectionTitle, Empty, SkeletonCards, Skeleton, ProgressBar } from '../components/common';
+import { SectionTitle, Empty, SkeletonCards, Skeleton, ProgressBar, LoadingState } from '../components/common';
 import { STATIONS } from '../../../shared/types';
 import type { AppStats, TrackRef, OnboardArtist, SuggestedTrack } from '../../../shared/types';
 import { offlineSuggest } from '../offlineRec';
@@ -25,7 +25,7 @@ function StationPoster({ s, i }: { s: (typeof STATIONS)[number]; i: number }) {
       transition={{ duration: 0.3, delay: Math.min(i, 10) * 0.04 }}
       className="poster text-left w-40"
       title={s.desc}>
-      <div className={`poster-img w-40 h-40 relative bg-gradient-to-br ${s.grad} flex flex-col justify-end p-3`}>
+      <div className={`station-art poster-img w-40 h-40 relative bg-gradient-to-br ${s.grad} flex flex-col justify-end p-4`}>
         <Radio size={40} className="absolute top-2 right-2 text-white/20 rotate-12" />
         <div className="font-bold text-sm text-white drop-shadow leading-tight">{s.name}</div>
         <div className="poster-veil">
@@ -55,16 +55,15 @@ function QuickTile({ icon: Icon, name, autoId, stationId, grad, i }: {
       }}
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: i * 0.05 }}
-      className="group relative flex items-center gap-3 rounded-lg overflow-hidden bg-panel2/80
-        hover:bg-panel2 transition-colors text-left shadow-md">
+      className="quick-tile group relative flex items-center overflow-hidden transition-colors text-left">
       <div className={`w-12 h-12 md:w-14 md:h-14 shrink-0 bg-gradient-to-br ${grad} flex items-center justify-center`}>
         <Icon size={20} className="text-white drop-shadow" />
       </div>
       <span className="flex-1 min-w-0 font-semibold text-xs md:text-[13px] leading-tight line-clamp-2 pr-2">{name}</span>
       {/* Badge play solo desktop: su mobile occupava spazio e troncava il nome */}
       <span className="max-md:hidden opacity-0 group-hover:opacity-100 transition-opacity mr-3 w-9 h-9 rounded-full
-        bg-accent text-white flex items-center justify-center shadow-lg shrink-0">
-        <Play size={14} className="ml-0.5" fill="currentColor" />
+        bg-accent text-ink flex items-center justify-center shrink-0">
+        <ArrowRight size={15} />
       </span>
     </motion.button>
   );
@@ -79,7 +78,7 @@ function MixPoster({ tag, i }: { tag: string; i: number }) {
       initial={{ opacity: 0, x: 14 }} animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.3, delay: Math.min(i, 10) * 0.04 }}
       className="poster text-left w-40" title={`Il meglio di ${tag} sui tuoi gusti`}>
-      <div className={`poster-img w-40 h-40 relative bg-gradient-to-br ${grads[i % grads.length]} flex flex-col justify-end p-3`}>
+      <div className={`station-art poster-img w-40 h-40 relative bg-gradient-to-br ${grads[i % grads.length]} flex flex-col justify-end p-4`}>
         <AudioLines size={40} className="absolute top-2 right-2 text-white/20 rotate-12" />
         <div className="font-bold text-sm text-white drop-shadow leading-tight capitalize">Mix {tag}</div>
         <div className="poster-veil">
@@ -184,7 +183,7 @@ export default function Home() {
   const [suggLocal, setSuggLocal] = useState<SuggestedTrack[]>([]);
   const sugg = homeCache?.sugg.length ? homeCache.sugg : suggLocal;
   const charts = homeCache?.charts ?? [];
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!homeCache);
 
   const load = async (force = false) => {
     void api().library.stats().then(setStats).catch(() => {});
@@ -246,10 +245,17 @@ export default function Home() {
   return (
     <div className="overflow-y-auto h-full relative">
       {/* Mobile: Impostazioni non è nella barra inferiore → ingranaggio in alto a destra (come Spotify) */}
-      <button onClick={() => nav('settings')} title="Impostazioni"
-        className="md:hidden absolute top-6 right-6 z-20 w-9 h-9 rounded-full bg-black/40 backdrop-blur border border-white/10 text-white flex items-center justify-center">
-        <SettingsIcon size={16} />
-      </button>
+      <header className="home-header">
+        <div>
+          <div className="eyebrow mb-2">Il tuo universo musicale</div>
+          <h1>{greet}.</h1>
+          <p>Un nuovo ascolto. Una nuova scoperta.</p>
+        </div>
+        <div className="home-tools">
+          <button onClick={() => nav('search')} title="Cerca musica (Ctrl+K)" aria-label="Cerca musica" className="home-tool"><Search size={17} /></button>
+          <button onClick={() => nav('settings')} title="Impostazioni" aria-label="Impostazioni" className="home-tool"><SettingsIcon size={17} /></button>
+        </div>
+      </header>
 
       {coldStart && <Onboarding onDone={() => { setOnboarded(true); void load(true); void api().library.stats().then(setStats).catch(() => {}); }} />}
 
@@ -257,9 +263,9 @@ export default function Home() {
       {coldStart ? null : loading && !hero ? (
         /* Skeleton hero: stessa altezza del vero hero — niente salto di layout
            quando arriva il brano in vetrina */
-        <div className="hero m-4 mb-2 md:m-6 md:mb-2 bg-panel border border-line">
+        <div className="hero home-hero bg-panel border border-line">
           <div className="relative p-5 pb-5 md:p-8 md:pb-7 max-w-2xl w-full space-y-3">
-            <Skeleton className="h-3 w-44" />
+            <LoadingState label="Preparo i tuoi prossimi ascolti…" detail="Mix, scoperte e musica scelta per te." layout="inline" />
             <Skeleton className="h-9 w-2/3" />
             <Skeleton className="h-4 w-1/3" />
             <div className="flex gap-3 pt-3">
@@ -269,15 +275,16 @@ export default function Home() {
           </div>
         </div>
       ) : hero ? (
-        <div className="hero m-4 mb-2 md:m-6 md:mb-2">
+        <section className="hero home-hero" aria-label="Scelto per te">
           {heroBgReady && <div className="hero-bg" style={{ backgroundImage: `url(${heroBgReady})` }} />}
           <div className="hero-fade" />
-          <div className="relative p-5 pb-5 md:p-8 md:pb-7 max-w-2xl">
+          <div className="hero-art" aria-hidden="true"><CoverImg src={hero.thumbnail} className="w-full h-full object-cover" icon={<Disc3 />} /></div>
+          <div className="hero-content">
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
               <div className="text-[11px] font-bold tracking-[0.25em] text-accent uppercase mb-2 flex items-center gap-2">
-                <Sparkles size={12} /> {greet}<span className="max-md:hidden"> — scelto per te</span>
+                <Sparkles size={12} /> Scelto per te
               </div>
-              <h1 className="hero-title text-3xl md:text-4xl font-black tracking-tight leading-tight">{hero.title}</h1>
+              <h2 className="hero-title">{hero.title}</h2>
               <div className="text-base text-white/85 mt-1.5 font-medium">{hero.artist}</div>
               {'reason' in hero && hero.reason && (
                 <div className="text-[12px] text-white/60 mt-2 max-w-md">{hero.reason}</div>
@@ -297,16 +304,16 @@ export default function Home() {
               </div>
             </motion.div>
           </div>
-        </div>
+        </section>
       ) : (
-        <div className="m-6 mb-2 hero" style={{ minHeight: 220 }}>
+        <div className="home-hero hero" style={{ minHeight: 260 }}>
           <div className="hero-fade" />
-          <div className="relative p-8">
-            <h1 className="hero-title text-4xl font-black tracking-tight">
-              <span className="neon-text [text-shadow:none]">{greet}.</span>
-            </h1>
-            <p className="text-dim mt-2">Cerca un brano o avvia una stazione: la tua musica, pronta per il CD della macchina.</p>
-            <div className="flex gap-3 mt-5">
+          <div className="hero-art" aria-hidden="true"><Disc3 strokeWidth={0.7} /></div>
+          <div className="hero-content">
+            <div className="eyebrow mb-3">Premi play al tuo mondo</div>
+            <h2 className="hero-title">La musica giusta.<br /><span className="text-accent">Il tuo momento.</span></h2>
+            <p className="text-dim text-sm mt-3 max-w-md leading-relaxed">Ritrova ciò che ami, scopri la prossima ossessione. La tua collezione comincia con un ascolto.</p>
+            <div className="flex flex-wrap gap-3 mt-5">
               <button onClick={() => nav('search')} className="btn-hero btn-hero-play"><Play size={18} /> Cerca musica</button>
               <button onClick={() => nav('assistant')} className="btn-hero btn-hero-ghost"><Wand2 size={17} /> Componi un CD</button>
             </div>
@@ -314,7 +321,7 @@ export default function Home() {
         </div>
       )}
 
-      <div className="px-6 pb-8 space-y-9">
+      <div className="home-sections px-6 pb-8 space-y-9">
         {/* ===== Quick pick stile Spotify: accesso diretto alle autogenerate ===== */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-4">
           <QuickTile i={0} icon={Sparkles} name="Il tuo mix" autoId="mix" grad="from-accent to-accent2" />

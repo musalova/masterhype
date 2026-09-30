@@ -16,13 +16,13 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SRC = join(root, 'logo', 'Gemini_Generated_Image_phv873phv873phv8.jpg');
+const SRC = join(root, 'logo', 'masterhype.svg');
 
 // Sorgente 2048x2048. Bbox del neon (soglia ~140): x408..1684, y368..1632
 // → centro ≈ (1046,1000), diametro anello ≈ 1276.
 const TILE = { left: 266, top: 220, width: 1560, height: 1560 }; // anello ≈ 82% del tile
 const TIGHT = { left: 396, top: 310, width: 1300, height: 1300 }; // lettere, per icone ≤32px
-const BG = { r: 12, g: 10, b: 16 }; // #0c0a10 — come ic_launcher_background / capacitor bg
+const BG = { r: 9, g: 14, b: 16 }; // #0c0a10 — come ic_launcher_background / capacitor bg
 
 const tile = (size, region = TILE) =>
   sharp(SRC).extract(region).resize(size, size, { kernel: 'lanczos3' }).png();

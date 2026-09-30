@@ -9,7 +9,7 @@ import { usePersistedState } from '../persist';
 import { queuePlOp } from '../pendingSync';
 import TrackRow from '../components/TrackRow';
 import { TrackPoster } from '../components/Shelf';
-import { SectionTitle, Empty, SkeletonRows, SkeletonGrid } from '../components/common';
+import { SectionTitle, Empty, LoadingState } from '../components/common';
 import type { Playlist } from '../../../shared/types';
 
 export default function Library() {
@@ -150,7 +150,7 @@ export default function Library() {
       <SectionTitle title="Libreria"
         sub={`${library.length} brani · MP3 320 kbps${isRemote() && phoneIds.size ? ` · ${phoneIds.size} sul telefono` : ''}`}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button onClick={() => useApp.getState().nav('downloads')}
               className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${activeDl ? 'bg-accent2/15 text-accent2 border border-accent2/30' : 'bg-panel2 hover:bg-line text-dim hover:text-txt'}`}
               title="Coda di download">
@@ -186,9 +186,9 @@ export default function Library() {
           </div>
         } />
 
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filtra per artista, titolo, album…"
-          className="w-full max-w-sm bg-panel border border-line rounded-lg px-3 py-2 text-sm outline-none focus:border-accent" />
+          className="w-full min-w-0 sm:max-w-sm bg-panel border border-line rounded-lg px-3 py-2.5 text-sm outline-none focus:border-accent" />
         <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}
           className="bg-panel border border-line rounded-lg px-2 py-2 text-xs text-dim outline-none focus:border-accent">
           <option value="recent">Recenti</option>
@@ -272,7 +272,7 @@ export default function Library() {
       {!libraryLoaded && tracks.length === 0 && remoteOnly.length === 0 ? (
         // Skeleton nella stessa forma della vista scelta: la pagina non "salta"
         // quando arrivano i dati
-        view === 'grid' ? <SkeletonGrid n={14} /> : <SkeletonRows n={9} />
+        <LoadingState label="Ritrovo la tua collezione…" detail="Brani, preferiti e copertine." layout={view === 'grid' ? 'grid' : 'rows'} n={view === 'grid' ? 14 : 9} />
       ) : tracks.length === 0 && remoteOnly.length === 0 ? (
         <Empty icon={<LibIcon size={40} />} title={library.length || remoteLikeList.length ? 'Nessun risultato col filtro' : 'Libreria vuota'}
           sub={isRemote()

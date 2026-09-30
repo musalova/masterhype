@@ -4,7 +4,7 @@ import { Play, Radio, AudioLines, RefreshCw, Shuffle, ArrowLeft, ListMusic } fro
 import { useApp } from '../store';
 import type { StationSel } from '../store';
 import { api } from '../api';
-import { SectionTitle, Empty, SkeletonRows } from '../components/common';
+import { SectionTitle, Empty, LoadingState } from '../components/common';
 import TrackRow from '../components/TrackRow';
 import { STATIONS } from '../../../shared/types';
 import type { StationDef, TrackRef } from '../../../shared/types';
@@ -25,13 +25,13 @@ function StationCard({ s, i }: { s: StationDef; i: number }) {
   return (
     <motion.button onClick={() => openStation({ kind: 'station', id: s.id })}
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i, 12) * 0.03 }}
-      className={`group relative text-left rounded-xl p-4 overflow-hidden border border-white/10 bg-gradient-to-br ${s.grad}
-        poster min-h-[110px] flex flex-col justify-end`}>
+      className={`station-art group relative text-left rounded-xl p-4 overflow-hidden border border-white/10 bg-gradient-to-br ${s.grad}
+        poster min-h-[140px] flex flex-col justify-end`}>
       <Radio size={52} className="absolute -top-2 -right-2 text-white/15 rotate-12" />
       <div className="font-bold text-sm text-white drop-shadow">{s.name}</div>
       <div className="text-[11px] text-white/75 mt-0.5 leading-snug">{s.desc}</div>
       <div className="absolute right-3 bottom-3 w-9 h-9 rounded-full bg-black/60 backdrop-blur flex items-center justify-center
-        opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+        opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity shadow-lg">
         <ListMusic size={15} className="text-white" />
       </div>
     </motion.button>
@@ -159,7 +159,8 @@ function StationDetail({ sel }: { sel: StationSel }) {
       {/* Scaletta: skeleton solo al PRIMO caricamento — su "Rigenera" la lista
           resta visibile (il bottone gira) invece di sparire e ricomparire */}
       <div className="p-4 md:p-8 pt-5">
-        {loading && tracks.length === 0 ? <SkeletonRows n={10} /> : tracks.length ? (
+        {loading && tracks.length > 0 && <LoadingState label="Rinnovo la scaletta…" layout="inline" />}
+        {loading && tracks.length === 0 ? <LoadingState label="Sintonizzo la tua stazione…" detail={meta.name} n={8} /> : tracks.length ? (
           <div className={`bg-panel border border-line rounded-xl divide-y divide-line/50 transition-opacity ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
             {tracks.map((t, i) => <TrackRow key={t.videoId + i} t={t} index={i} queue={tracks} radio />)}
           </div>

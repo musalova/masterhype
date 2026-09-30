@@ -6,7 +6,7 @@ import { pcGone, syncNote } from '../remote';
 import { useApp } from '../store';
 import TrackRow from '../components/TrackRow';
 import { CoverImg } from '../components/CoverImg';
-import { SectionTitle, Empty, SkeletonRows } from '../components/common';
+import { SectionTitle, Empty, LoadingState } from '../components/common';
 import type { Playlist, TrackRef, LibraryTrack } from '../../../shared/types';
 import { cachedAuto, cacheAuto, offlineAutoplaylist } from '../offlineRec';
 
@@ -210,7 +210,7 @@ export default function Playlists() {
           ))}
         </div>
 
-        <SectionTitle title="Le tue playlist" sub={`${pls.length} totali`} />
+        <SectionTitle title="Le tue playlist" sub={loaded ? `${pls.length} totali` : 'Recupero le tue raccolte…'} />
         <div className={`bg-panel border border-line rounded-xl p-3 mb-4 space-y-2 ${showDetail ? '' : 'max-w-md'}`}>
           <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()}
             placeholder="Nome nuova playlist…"
@@ -247,17 +247,7 @@ export default function Playlists() {
             </div>
           ))}
           {!loaded ? (
-            <div className="space-y-1.5 py-1">
-              {[64, 80, 56].map((w, i) => (
-                <div key={i} className="flex items-center gap-3 px-2 py-2" style={{ animationDelay: `${i * 70}ms` }}>
-                  <div className="w-12 h-12 rounded-lg skeleton bg-panel2" />
-                  <div className="space-y-1.5">
-                    <div className="h-3 rounded skeleton bg-panel2" style={{ width: w * 2 }} />
-                    <div className="h-2.5 w-20 rounded skeleton bg-panel2" />
-                  </div>
-                </div>
-              ))}
-            </div>
+            <div className="col-span-full"><LoadingState label="Ritrovo le tue playlist…" n={3} /></div>
           ) : pls.length === 0 && <Empty icon={<ListMusic size={28} />} title="Nessuna playlist" />}
         </div>
       </div>
@@ -268,10 +258,10 @@ export default function Playlists() {
             /* ===== Playlist autogenerata ===== */
             <motion.div key={auto.id} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
               <button onClick={() => setAuto(null)} className="flex items-center gap-1 text-xs text-dim hover:text-txt mb-2"><ChevronLeft size={14} /> Tutte le playlist</button>
-              <SectionTitle title={auto.name} sub={`${auto.desc} · ${auto.tracks.length} brani`}
+              <SectionTitle title={auto.name} sub={autoLoading ? auto.desc : `${auto.desc} · ${auto.tracks.length} brani`}
                 action={
                   <div className="flex gap-2 items-center">
-                    <button onClick={() => auto.tracks.length && play(auto.tracks[0], auto.tracks)}
+                    <button disabled={autoLoading || !auto.tracks.length} onClick={() => auto.tracks.length && play(auto.tracks[0], auto.tracks)}
                       className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white flex items-center gap-1.5 font-medium hover:bg-accent/85">
                       <Play size={13} fill="currentColor" /> Riproduci
                     </button>
@@ -279,13 +269,13 @@ export default function Playlists() {
                       className="text-xs px-3 py-1.5 rounded-lg bg-panel2 hover:bg-line text-dim hover:text-txt flex items-center gap-1">
                       <RefreshCw size={12} className={autoLoading ? 'animate-spin' : ''} /> Rigenera
                     </button>
-                    <button onClick={() => void saveAutoAsPlaylist()}
+                    <button disabled={autoLoading || !auto.tracks.length} onClick={() => void saveAutoAsPlaylist()}
                       className="text-xs px-3 py-1.5 rounded-lg bg-panel2 hover:bg-line text-dim hover:text-txt flex items-center gap-1">
                       <Save size={12} /> Salva playlist
                     </button>
                   </div>
                 } />
-              {autoLoading ? <SkeletonRows n={8} /> : (
+              {autoLoading ? <LoadingState label="Preparo il tuo mix…" detail={auto.name} n={8} /> : (
                 <div className="bg-panel border border-line rounded-xl divide-y divide-line/50">
                   {auto.tracks.map((t, i) => <TrackRow key={t.videoId + i} t={t} index={i} queue={auto.tracks} />)}
                   {!auto.tracks.length && <Empty icon={<Sparkles size={28} />} title="Playlist vuota" sub="Il motore non ha trovato brani — ascolta e metti like per affinare i gusti." />}

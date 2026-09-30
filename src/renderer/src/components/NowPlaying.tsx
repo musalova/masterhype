@@ -6,6 +6,7 @@ import { api } from '../api';
 import { pushBack } from '../backStack';
 import { useApp } from '../store';
 import { CoverImg } from './CoverImg';
+import { LoadingState } from './common';
 import type { LibraryTrack, LyricsResult, TrackRef } from '../../../shared/types';
 
 const VID_RE = /^[A-Za-z0-9_-]{6,15}$/; // solo ID YouTube plausibili, mai URL arbitrari
@@ -318,10 +319,10 @@ export default function NowPlaying({ cur, time, dur, playing, onClose, onSeek }:
   return (
     <motion.div ref={rootRef} initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 24 }}
       transition={{ duration: 0.22 }} onMouseMove={wake} onTouchStart={wake}
-      className={`fixed inset-x-0 top-0 z-40 flex flex-col overflow-hidden bg-bg ${fs ? 'bottom-0' : 'bottom-20 max-md:bottom-[124px]'} ${hideUi ? 'cursor-none' : ''}`}>
+      className={`fixed inset-x-0 top-0 z-40 flex flex-col overflow-hidden bg-bg ${fs ? 'bottom-0' : 'bottom-20 max-md:bottom-[calc(var(--mobile-nav-height)+64px)]'} ${hideUi ? 'cursor-none' : ''}`}>
       {/* Ambient light: due aloni col colore dominante, che respirano piano */}
       <div className="absolute inset-0 pointer-events-none transition-[background] duration-1000"
-        style={{ background: `radial-gradient(60% 70% at 25% 20%, rgba(${rgb},${cinema ? .22 : .38}), transparent 65%), radial-gradient(50% 60% at 80% 85%, rgba(${rgb},${cinema ? .14 : .26}), transparent 65%), #0a0a0b` }} />
+        style={{ background: `radial-gradient(60% 70% at 25% 20%, rgba(${rgb},${cinema ? .22 : .38}), transparent 65%), radial-gradient(50% 60% at 80% 85%, rgba(${rgb},${cinema ? .14 : .26}), transparent 65%), var(--color-bg)` }} />
       {!cinema && cover && <div className="absolute inset-0 pointer-events-none bg-cover bg-center opacity-[.18]" style={{ backgroundImage: `url(${cover})`, filter: 'blur(70px) saturate(1.4)', transform: 'scale(1.3)' }} />}
 
       {/* Header */}
@@ -373,7 +374,7 @@ export default function NowPlaying({ cur, time, dur, playing, onClose, onSeek }:
             </div>
             {tab === 'queue' ? <QueueList /> : (
               <div className="flex-1 overflow-y-auto px-6 pb-10">
-                {lyrLoading && <div className="text-xs text-white/50 py-6 text-center">Cerco il testo…</div>}
+                {lyrLoading && <div className="py-6"><LoadingState label="Cerco il testo…" layout="inline" /></div>}
                 {!lyrLoading && !lyrics?.found && <div className="text-xs text-white/50 py-6 text-center">Testo non trovato per questo brano.</div>}
                 {synced ? (
                   <div className="space-y-1.5 py-3">

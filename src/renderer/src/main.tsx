@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { isRemote, hasRemoteConf, needsProfilePick, isStandalone, ensureDeviceToken, redeemPairParam } from './remote';
 import { syncPrefs } from './persist';
+import { dismissSplash, failBoot, setBootStage } from './bootSplash';
 import './index.css';
 
 // Bootstrap: su telefono (no preload Electron) servono host+token del PC —
@@ -15,7 +16,10 @@ async function boot(): Promise<void> {
   // QR aperto nel browser: ?pair=<codice monouso> va riscattato PRIMA del
   // gating — diventa un device token salvato + flag "scegli il profilo".
   // Se invece siamo già pairati il codice è di un altro pairing: ignorato.
-  if (remote && !hasRemoteConf()) await redeemPairParam();
+  if (remote && !hasRemoteConf()) {
+    setBootStage('Verifico il collegamento…');
+    await redeemPairParam();
+  }
   const needsPairing = remote && (needsProfilePick() || (!hasRemoteConf() && !isStandalone()));
   // Le preferenze condivise (volume, schermata, code…) devono arrivare dal
   // DB del PC PRIMA che lo store zustand si inizializzi: App va importato
@@ -30,11 +34,12 @@ async function boot(): Promise<void> {
     // profilo — la credenziale admin non resta memorizzata sul telefono.
     // Fire-and-forget: PC giù o server vecchio → si riprova al prossimo avvio.
     if (remote && hasRemoteConf()) void ensureDeviceToken();
+    setBootStage('Recupero le tue preferenze…');
     await Promise.race([syncPrefs(), new Promise((r) => setTimeout(r, 3500))]);
   }
-  const [{ default: App }, { default: ConnectGate }, { initAppearance }, { RootErrorBoundary }] = await Promise.all([
-    import('./App'),
-    import('./components/ConnectGate'),
+  setBootStage('Preparo il tuo spazio musicale…');
+  const [{ default: Entry }, { initAppearance }, { RootErrorBoundary }] = await Promise.all([
+    needsPairing ? import('./components/ConnectGate') : import('./App'),
     import('./appearance'),
     import('./components/common'),
   ]);
@@ -42,8 +47,9 @@ async function boot(): Promise<void> {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <RootErrorBoundary>
-        {needsPairing ? <ConnectGate /> : <App />}
+        <Entry />
       </RootErrorBoundary>
+      <BootReady />
     </React.StrictMode>,
   );
 }
@@ -53,16 +59,7 @@ void boot().catch((err) => {
   console.error('[boot]', err);
   const root = document.getElementById('root');
   if (!root || root.childElementCount) return;
-  const box = document.createElement('div');
-  box.style.cssText = 'height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#ece8f1;background:#0c0a10;font-family:inherit';
-  const msg = document.createElement('div');
-  msg.textContent = 'Avvio fallito — riprova a riavviare l’app';
-  const btn = document.createElement('button');
-  btn.textContent = 'Ricarica';
-  btn.style.cssText = 'padding:8px 18px;border-radius:10px;border:0;background:#ff4d6d;color:#fff;font-weight:700;cursor:pointer';
-  btn.onclick = () => location.reload();
-  box.append(msg, btn);
-  root.append(box);
+  failBoot();
 });
 
 // Service worker per "Aggiungi a schermata Home" (PWA) — solo client remoto http
@@ -70,11 +67,8 @@ if (remote && location.protocol.startsWith('http') && 'serviceWorker' in navigat
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
-// Splash: resta visibile almeno ~900ms per l'animazione di avvio, poi fade-out
-const splash = document.getElementById('splash');
-if (splash) {
-  setTimeout(() => {
-    splash.classList.add('out');
-    setTimeout(() => splash.remove(), 600);
-  }, 900);
+// Splash: resta visibile fino al primo commit React, poi fade-out senza attese artificiali
+function BootReady() {
+  React.useEffect(() => { dismissSplash(); }, []);
+  return null;
 }

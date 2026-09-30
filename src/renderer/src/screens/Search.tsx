@@ -7,7 +7,7 @@ import { usePersistedState } from '../persist';
 import TrackRow from '../components/TrackRow';
 import { CoverImg } from '../components/CoverImg';
 import Trends from './Trends';
-import { SectionTitle, Empty, SkeletonRows, SkeletonCards } from '../components/common';
+import { SectionTitle, Empty, LoadingState } from '../components/common';
 import { useApp } from '../store';
 import { STATIONS } from '../../../shared/types';
 import type { SearchResult, TrackRef, ArtistPage, TopResult, ArtistRef, AlbumRef, PlaylistRef } from '../../../shared/types';
@@ -95,6 +95,7 @@ export default function Search() {
   const [emptyTab, setEmptyTab] = usePersistedState<'browse' | 'trends'>('mh-pref-searchtab', 'browse');
   const [res, setRes] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadContext, setLoadContext] = useState({ label: 'Cerco la tua musica…', detail: '' });
   const [expanding, setExpanding] = useState(false); // fase 2: categorie in arrivo
   const [tab, setTab] = useState<'all' | 'songs' | 'albums' | 'artists' | 'playlists'>('all');
   const [panel, setPanel] = useState<{ title: string; sub?: string; art?: string; tracks: TrackRef[] } | null>(null);
@@ -137,6 +138,8 @@ export default function Search() {
     setSuggOpen(false); // la ricerca parte: il dropdown si chiude
     const id = ++reqId.current;
     setLoading(true);
+    setExpanding(false);
+    setLoadContext({ label: 'Cerco la tua musica…', detail: queryStr });
     setPanel(null); setArtist(null); setHistory([]);
     setTab('all');
     setSearchHist((h) => pushHist(h, queryStr));
@@ -213,43 +216,42 @@ export default function Search() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openAlbum = async (id: string, title: string, art?: string, sub?: string) => {
-    setLoading(true);
+  const openCollection = async (kind: 'album' | 'playlist', id: string, title: string, art?: string, sub?: string) => {
+    const request = ++reqId.current;
+    setLoading(true); setExpanding(false);
+    setLoadContext({ label: kind === 'album' ? 'Apro l’album…' : 'Apro la playlist…', detail: title });
     try {
+      const tracks = await (kind === 'album' ? api().yt.albumTracks(id) : api().yt.playlistTracks(id));
+      if (reqId.current !== request) return;
       setArtist(null);
-      setPanel({ title, art, sub, tracks: await api().yt.albumTracks(id) });
+      setPanel({ title, art, sub, tracks });
     } catch {
-      toast('Album non disponibile', 'err');
+      if (reqId.current === request) toast(kind === 'album' ? 'Album non disponibile' : 'Playlist non disponibile', 'err');
     } finally {
-      setLoading(false);
+      if (reqId.current === request) setLoading(false);
     }
   };
-
-  const openPlaylist = async (id: string, title: string, art?: string, sub?: string) => {
-    setLoading(true);
-    try {
-      setArtist(null);
-      setPanel({ title, art, sub, tracks: await api().yt.playlistTracks(id) });
-    } catch {
-      toast('Playlist non disponibile', 'err');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const openAlbum = (id: string, title: string, art?: string, sub?: string) => openCollection('album', id, title, art, sub);
+  const openPlaylist = (id: string, title: string, art?: string, sub?: string) => openCollection('playlist', id, title, art, sub);
 
   const openArtist = async (id: string, name = '') => {
-    setLoading(true);
+    const request = ++reqId.current;
+    setLoading(true); setExpanding(false);
+    setLoadContext({ label: 'Apro la pagina artista…', detail: name });
     try {
       const page = await api().yt.artistPage(id);
+      if (reqId.current !== request) return;
       setPanel(null);
       setHistory((h) => (artist ? [...h, artist] : h));
       setArtist(page);
     } catch {
-      toast(`Pagina artista non disponibile${name ? `: ${name}` : ''}`, 'err');
+      if (reqId.current === request) toast(`Pagina artista non disponibile${name ? `: ${name}` : ''}`, 'err');
     } finally {
-      setLoading(false);
+      if (reqId.current === request) setLoading(false);
     }
   };
+
+  const cancelLoad = () => { reqId.current++; setLoading(false); setExpanding(false); };
 
   const goBack = () => {
     const prev = history[history.length - 1];
@@ -306,7 +308,7 @@ export default function Search() {
           }}
           className="w-full bg-panel border border-line rounded-full pl-11 pr-4 py-3 text-sm outline-none focus:border-accent focus-visible:outline-none focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_18%,transparent),0_0_22px_-4px_color-mix(in_srgb,var(--color-accent)_50%,transparent)] transition-shadow" />
         {q && (
-          <button type="button" onClick={() => { setQ(''); setRes(null); setSugg([]); setSuggOpen(false); lastQ.current = ''; inputRef.current?.focus(); }}
+          <button type="button" aria-label="Cancella ricerca" onClick={() => { cancelLoad(); suggReq.current++; setQ(''); setRes(null); setSugg([]); setSuggOpen(false); lastQ.current = ''; inputRef.current?.focus(); }}
             className="absolute right-4 top-1/2 -translate-y-1/2 text-dim hover:text-txt">
             <X size={15} />
           </button>
@@ -382,7 +384,7 @@ export default function Search() {
                   <motion.button key={s.id}
                     onClick={() => useApp.getState().openStation({ kind: 'station', id: s.id })}
                     initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i, 14) * 0.03 }}
-                    className={`relative text-left rounded-xl overflow-hidden bg-gradient-to-br ${s.grad} p-3.5 min-h-[76px]
+                    className={`station-art relative text-left rounded-xl overflow-hidden bg-gradient-to-br ${s.grad} p-4 min-h-[110px]
                       flex flex-col justify-end card-hover shadow-lg`}>
                     <Radio size={30} className="absolute -top-1 -right-1 text-white/20 rotate-12" />
                     <div className="font-bold text-[13px] text-white drop-shadow leading-tight">{s.name}</div>
@@ -394,16 +396,10 @@ export default function Search() {
         </section>
       )}
 
-      {loading && (
-        <div className="space-y-6">
-          <div className="text-dim text-sm flex items-center gap-2"><div className="eq"><i /><i /><i /></div> Caricamento…</div>
-          <SkeletonCards n={5} />
-          <SkeletonRows n={7} />
-        </div>
-      )}
+      {loading && <LoadingState {...loadContext} n={7} onCancel={cancelLoad} />}
 
       {/* "Forse cercavi…" */}
-      {res?.correctedQuery && (
+      {!loading && res?.correctedQuery && (
         <button onClick={() => { setQ(res.correctedQuery!); void doSearch(undefined, res.correctedQuery!); }}
           className="mb-4 text-sm text-dim hover:text-accent transition-colors">
           Forse cercavi: <span className="text-accent font-medium">{res.correctedQuery}</span>
@@ -412,7 +408,7 @@ export default function Search() {
 
       {/* Pannello tracce (album / playlist) — header con copertina stile Spotify */}
       <AnimatePresence>
-        {panel && (
+        {!loading && panel && (
           <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-8">
             <div className="flex items-end gap-4 mb-5">
               <div className="w-24 h-24 md:w-28 md:h-28 rounded-xl bg-panel2 overflow-hidden shrink-0 shadow-xl flex items-center justify-center">
@@ -442,7 +438,7 @@ export default function Search() {
 
       {/* Pagina artista completa */}
       <AnimatePresence>
-        {artist && !panel && (
+        {!loading && artist && !panel && (
           <motion.div key={artist.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             {/* Hero artista stile Spotify: backdrop sfocato dalla foto, nome
                 enorme, azioni prominenti (Riproduci / Mescola / Radio) */}
@@ -539,7 +535,7 @@ export default function Search() {
       </AnimatePresence>
 
       {/* Risultati ricerca */}
-      {res && !artist && !panel && (
+      {!loading && res && !artist && !panel && (
         <div className="space-y-8">
           {/* Tab filtri + stato espansione */}
           <div className="flex items-center gap-2 flex-wrap">
@@ -551,7 +547,7 @@ export default function Search() {
                 {label}
               </button>
             ))}
-            {expanding && <span className="text-[11px] text-dim flex items-center gap-1.5 ml-1"><div className="eq"><i /><i /><i /></div> altre categorie…</span>}
+            {expanding && <span role="status" className="text-[11px] text-dim flex items-center gap-1.5 ml-1"><div className="eq"><i /><i /><i /></div> altre categorie…</span>}
           </div>
 
           {/* Top result */}

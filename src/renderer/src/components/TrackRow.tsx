@@ -82,21 +82,22 @@ export default function TrackRow({ t, index, queue, radio, showAddCd = true, sho
     // `row-cv` (content-visibility) salta impaginazione/paint delle righe fuori schermo.
     <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.22, delay: Math.min(index ?? 0, 12) * 0.025, ease: 'easeOut' }}
-      className={`row-cv group flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-panel2/70 transition-colors relative ${checked ? 'bg-accent/10' : ''}`}>
+      data-current={isCurrent}
+      className={`track-row row-cv group flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-panel2/70 transition-colors relative ${checked ? 'bg-accent/10' : ''}`}>
       {onCheck != null && (
         <input type="checkbox" checked={!!checked} onChange={(e) => onCheck(e.target.checked)}
           onClick={(e) => e.stopPropagation()}
-          className={`w-3.5 h-3.5 accent-[--color-accent] cursor-pointer shrink-0 transition-opacity ${checked ? '' : 'opacity-0 group-hover:opacity-100 max-md:opacity-60'}`} />
+          className={`w-3.5 h-3.5 accent-[--color-accent] cursor-pointer shrink-0 transition-opacity ${checked ? '' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-md:opacity-60'}`} />
       )}
       <div className="w-6 text-xs text-dim text-center shrink-0 max-md:hidden">
         {isCurrent && buffering
           ? <Loader2 size={13} className="text-accent animate-spin mx-auto" />
           : isCurrent && playingNow ? <div className="eq"><i /><i /><i /></div> : (index != null ? index + 1 : '')}
       </div>
-      <button onClick={() => play(t, queue, undefined, radio)} className="w-9 h-9 rounded bg-panel2 overflow-hidden shrink-0 relative">
+      <button onClick={() => play(t, queue, undefined, radio)} aria-label={`Riproduci ${t.title}`} className="w-10 h-10 rounded-lg bg-panel2 overflow-hidden shrink-0 relative">
         <CoverImg src={t.thumbnail} trackId={pid} videoId={t.videoId} className="w-full h-full object-cover" />
         <div className={`absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity
-          ${isCurrent && buffering ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+          ${isCurrent && buffering ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}>
           {isCurrent && buffering ? <Loader2 size={15} className="text-white animate-spin" /> : <Play size={14} className="text-white" />}
         </div>
       </button>
@@ -147,12 +148,12 @@ export default function TrackRow({ t, index, queue, radio, showAddCd = true, sho
         {/* Like universale: funziona anche su brani non scaricati. Se è già
             "mi piace" resta SEMPRE visibile (come la spunta verde di Spotify) */}
         <button onClick={() => toggleLike(t)}
-          className={`p-1 transition-opacity ${liked ? 'text-accent' : 'text-dim hover:text-accent opacity-0 group-hover:opacity-100 max-md:opacity-100'}`}
+          className={`p-1 transition-opacity ${liked ? 'text-accent' : 'text-dim hover:text-accent opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-md:opacity-100'}`}
           title={liked ? 'Togli dai preferiti' : 'Mi piace'}>
           <Heart size={15} fill={liked ? 'currentColor' : 'none'} />
         </button>
         {/* Azioni secondarie on hover — sempre visibili su touch (niente hover) */}
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-md:opacity-100 transition-opacity">
           {move && (
             <>
               <button onClick={() => move(-1)} className="p-1 text-dim hover:text-txt" title="Su"><ChevronUp size={15} /></button>

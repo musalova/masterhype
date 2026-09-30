@@ -20,6 +20,7 @@ gh-token*
 
 # Copie locali del feed/servizio PC
 build/apk/
+build/apk-preview/
 
 # OS / editor
 .DS_Store

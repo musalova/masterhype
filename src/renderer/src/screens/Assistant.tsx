@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../api';
 import { useApp } from '../store';
 import TrackRow from '../components/TrackRow';
-import { SectionTitle, Empty, SkeletonRows, ProgressBar, BackLink } from '../components/common';
+import { SectionTitle, Empty, LoadingState, ProgressBar, BackLink } from '../components/common';
 import type { AssistantResult, SuggestedTrack } from '../../../shared/types';
 import { offlineAssistant } from '../offlineRec';
 import { isRemote } from '../api';
@@ -238,7 +238,7 @@ export default function Assistant() {
               className="w-full py-3.5 rounded-xl bg-gradient-to-r from-accent to-accent2 text-white font-bold text-sm hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 transition-opacity glow">
               {loading ? <><div className="eq"><i /><i /><i /></div> Sto componendo il tuo CD…</> : <><Sparkles size={16} /> Componi il mio CD</>}
             </button>
-            {loading && <SkeletonRows n={8} />}
+            {loading && <LoadingState label="Compongo la tua scaletta…" detail="Scelgo i brani in base alla tua richiesta e ai tuoi gusti." n={6} />}
           </motion.div>
         ) : (
           <motion.div key="result" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>

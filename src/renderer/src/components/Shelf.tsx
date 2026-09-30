@@ -27,7 +27,7 @@ export function Shelf({ children }: { children: React.ReactNode }) {
 
   const go = (dir: -1 | 1) => {
     const el = ref.current;
-    if (el) el.scrollBy({ left: dir * Math.round(el.clientWidth * 0.85), behavior: 'smooth' });
+    if (el) el.scrollBy({ left: dir * Math.round(el.clientWidth * 0.85), behavior: document.documentElement.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
   };
 
   return (
