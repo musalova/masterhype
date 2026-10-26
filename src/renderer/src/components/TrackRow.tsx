@@ -97,7 +97,7 @@ export default function TrackRow({ t, index, queue, radio, showAddCd = true, sho
       <button onClick={() => play(t, queue, undefined, radio)} aria-label={`Riproduci ${t.title}`} className="w-10 h-10 rounded-lg bg-panel2 overflow-hidden shrink-0 relative">
         <CoverImg src={t.thumbnail} trackId={pid} videoId={t.videoId} className="w-full h-full object-cover" />
         <div className={`absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity
-          ${isCurrent && buffering ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}>
+          ${isCurrent && buffering ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-md:opacity-100'}`}>
           {isCurrent && buffering ? <Loader2 size={15} className="text-white animate-spin" /> : <Play size={14} className="text-white" />}
         </div>
       </button>

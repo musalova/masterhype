@@ -24,7 +24,7 @@ beforeAll(async () => {
   library = await import('../src/main/services/library');
 });
 
-const t = (videoId: string, artist: string, title: string) => ({ videoId, artist, title });
+const t = (videoId: string, artist: string, title: string) => ({ videoId, artist, title, source: 'ytmusic' as const });
 const ev = (type: string, artist: string, title: string, ts = Date.now()) =>
   db.prepare('INSERT INTO events (artist,title,type,ts,user_id) VALUES (?,?,?,?,1)').run(artist, title, type, ts);
 

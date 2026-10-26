@@ -31,7 +31,7 @@ function StationCard({ s, i }: { s: StationDef; i: number }) {
       <div className="font-bold text-sm text-white drop-shadow">{s.name}</div>
       <div className="text-[11px] text-white/75 mt-0.5 leading-snug">{s.desc}</div>
       <div className="absolute right-3 bottom-3 w-9 h-9 rounded-full bg-black/60 backdrop-blur flex items-center justify-center
-        opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity shadow-lg">
+        opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 max-md:opacity-100 transition-opacity shadow-lg">
         <ListMusic size={15} className="text-white" />
       </div>
     </motion.button>

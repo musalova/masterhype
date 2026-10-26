@@ -270,7 +270,10 @@ export default function NowPlaying({ cur, time, dur, playing, onClose, onSeek }:
   const wake = () => {
     setIdle(false);
     if (idleT.current) clearTimeout(idleT.current);
-    idleT.current = setTimeout(() => setIdle(true), 2500);
+    // In pausa i controlli NON devono sparire: la UI nascosta in cinema serve
+    // solo mentre il video scorre — un utente fermo su pausa deve comunque
+    // riuscire a ripartire/chiudere senza dover "trovare" lo schermo invisibile.
+    idleT.current = setTimeout(() => setIdle(true), 3500);
   };
   useEffect(() => { if (mode === 'cinema') wake(); else setIdle(false); return () => { if (idleT.current) clearTimeout(idleT.current); }; }, [mode]);
 
@@ -318,7 +321,7 @@ export default function NowPlaying({ cur, time, dur, playing, onClose, onSeek }:
 
   return (
     <motion.div ref={rootRef} initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 24 }}
-      transition={{ duration: 0.22 }} onMouseMove={wake} onTouchStart={wake}
+      transition={{ duration: 0.22 }} onMouseMove={wake} onTouchStart={wake} onPointerDown={wake} onClick={wake}
       className={`fixed inset-x-0 top-0 z-40 flex flex-col overflow-hidden bg-bg ${fs ? 'bottom-0' : 'bottom-20 max-md:bottom-[calc(var(--mobile-nav-height)+64px)]'} ${hideUi ? 'cursor-none' : ''}`}>
       {/* Ambient light: due aloni col colore dominante, che respirano piano */}
       <div className="absolute inset-0 pointer-events-none transition-[background] duration-1000"
