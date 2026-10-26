@@ -195,6 +195,17 @@
 - Installer NSIS: l'app è tray-resident (la X nasconde) → `build/installer.nsh`
   (taskkill /F /IM MasterHype.exe in customInit/customInstall/customUn* macros)
   o l'installer trova i file bloccati e fallisce.
+- Firma EXE: `signtoolOptions.certificateSubjectName: MasterHype` in
+  electron-builder.yml → cert self-signed `CN=MasterHype` in
+  `Cert:\CurrentUser\My` (EKU code-signing, scade 10/2031, thumbprint
+  376BF05B…9389). Dà publisher name + timestamp DigiCert, NON toglie
+  SmartScreen (cert CA o Azure Trusted Signing servirebbero). Ricrearlo:
+  `New-SelfSignedCertificate -Type Custom -Subject 'CN=MasterHype'
+  -CertStoreLocation Cert:\CurrentUser\My -KeyExportPolicy Exportable
+  -KeySpec Signature -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm sha256
+  -NotAfter (Get-Date).AddYears(5) -TextExtension
+  @('2.5.29.37={text}1.3.6.1.5.5.7.3.3','2.5.29.19={text}')`. Senza la
+  sezione signtoolOptions electron-builder ≥26.18 salta la firma in silenzio.
 - Canali che agiscono sul PC fisico sono bloccati da remoto (deny-list in remote.ts):
   `lib:import` (path arbitrari), `sys:openFolder` (finestre Explorer sull'host).
 - Eliminare un profilo: vietato il proprio (guard handler) e l'ultimo rimasto
