@@ -165,7 +165,7 @@ export async function offlineStation(id: string, library: LibraryTrack[], remote
   const likes = likedTracks(library, remoteLikes);
   const top = [...library].sort((a, b) => b.playCount - a.playCount).map(toRef);
   const owned = ownedVids(library);
-  let list: TrackRef[] = [];
+  let list: TrackRef[];
   if (id === 'preferiti') list = shuffle(likes);
   else if (id === 'classifiche') list = await chartsPool();
   else if (id === 'per-te') list = shuffle([...likes.slice(0, 20), ...await upNextPool(likes.length ? likes : top, 3)]);

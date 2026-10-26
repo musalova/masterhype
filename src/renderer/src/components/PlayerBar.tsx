@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Disc3, Heart, ThumbsDown, Shuffle, Repeat, Repeat1, ListMusic, Radio, Waves, ChevronUp, Loader2 } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
-import { useApp } from '../store';
+import { useApp, notePlaybackPos, pickNextIndex } from '../store';
 import { api, mediaUrl, isRemote } from '../api';
 import { usePersistedState } from '../persist';
 import { pushMediaSession, stopMediaSession } from '../nativeMedia';
@@ -34,7 +34,7 @@ const gainOf = (lufs: number) => Math.min(2.5, Math.max(0.15, Math.pow(10, (TARG
 
 
 export default function PlayerBar() {
-  const { player, toggle, next, prev, setVolume, addToCd, downloadToCd, library, toggleShuffle, cycleRepeat, toggleRadio, toggleCrossfade, radioNext, playAt, toggleLike, remoteLiked, recordRemote, dislike } = useApp();
+  const { player, toggle, next, prev, setVolume, addToCd, downloadToCd, library, toggleShuffle, cycleRepeat, toggleRadio, toggleCrossfade, toggleLike, remoteLiked, recordRemote, dislike } = useApp();
   // Doppio <audio>: l'elemento attivo suona, l'altro pre-carica il brano dopo per il crossfade
   const elsRef = useRef<(HTMLAudioElement | null)[]>([null, null]);
   const actRef = useRef(0);
@@ -127,18 +127,10 @@ export default function PlayerBar() {
     }, 60);
   };
 
-  // Indice del brano successivo (rispetta shuffle/repeat); null se la coda finisce
-  const nextIndex = (): number | null => {
-    const p = useApp.getState().player;
-    if (p.queue.length < 2) return p.repeat === 'all' && p.queue.length ? 0 : null;
-    if (p.shuffle) {
-      let i = p.queueIndex;
-      while (i === p.queueIndex) i = Math.floor(Math.random() * p.queue.length);
-      return i;
-    }
-    if (p.queueIndex < p.queue.length - 1) return p.queueIndex + 1;
-    return p.repeat === 'all' ? 0 : null;
-  };
+  // Indice del brano successivo: STESSA logica di store.next (shuffle a
+  // sacchetto, repeat) — il crossfade non deve scegliere un brano diverso da
+  // quello che sceglierebbe lo skip. null se la coda finisce.
+  const nextIndex = (): number | null => pickNextIndex(useApp.getState().player);
 
   // Avvia il crossfade: carica il brano dopo sull'altro elemento e incrocia i volumi
   const startXfade = (nxt: TrackRef & { local?: boolean }, ni: number, fromVid: string) => {
@@ -171,7 +163,7 @@ export default function PlayerBar() {
     if (listen.current.vid && listen.current.vid !== cur?.videoId) flushListen();
     listen.current = { vid: cur?.videoId ?? '', t: cur ?? null, played: 0, last: 0, dur: 0 };
   }, [cur?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { window.addEventListener('beforeunload', flushListen); return () => window.removeEventListener('beforeunload', flushListen); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { window.addEventListener('beforeunload', flushListen); return () => window.removeEventListener('beforeunload', flushListen); }, []);
 
   useEffect(() => {
     const a = el();
@@ -271,7 +263,7 @@ export default function PlayerBar() {
     if (!a) return;
     if (player.playing) void a.play().catch(() => {});
     else { a.pause(); o?.pause(); } // in pausa si ferma anche il brano in crossfade
-  }, [player.playing]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [player.playing]);
 
   // Prefetch del brano successivo in coda: lo skip diventa quasi istantaneo.
   // In modalità autonoma (PC giù) il prefetch costa una risoluzione COMPLETA
@@ -310,6 +302,14 @@ export default function PlayerBar() {
     if (!c) return; // niente brano → niente sessione nativa
     const lib = c as LibraryTrack;
     const el0 = a ?? el();
+    // Posizione anche alla Media Session web: overlay multimediale di Windows
+    // e controlli del browser mostrano la timeline e permettono lo scrub.
+    const d = el0?.duration;
+    if (el0 && 'mediaSession' in navigator && navigator.mediaSession.setPositionState && Number.isFinite(d) && d! > 0) {
+      try {
+        navigator.mediaSession.setPositionState({ duration: d!, playbackRate: el0.playbackRate || 1, position: Math.min(d!, Math.max(0, el0.currentTime)) });
+      } catch { /* stato incoerente durante un cambio sorgente: il prossimo push lo corregge */ }
+    }
     pushMediaSession({
       title: c.title ?? '', artist: c.artist ?? '', album: lib.album || 'MasterHype',
       videoId: c.videoId,
@@ -353,7 +353,23 @@ export default function PlayerBar() {
     ms.setActionHandler('pause', () => { const s = useApp.getState(); if (s.player.playing) s.toggle(); });
     ms.setActionHandler('nexttrack', () => useApp.getState().next());
     ms.setActionHandler('previoustrack', () => useApp.getState().prev());
-    return () => { for (const a of ['play', 'pause', 'nexttrack', 'previoustrack'] as const) ms.setActionHandler(a, null); };
+    // Scrub/salti da overlay di sistema e cuffie: stesso percorso del seek
+    // da notifica Android ('mh-media-seek' → elemento attivo + sessione).
+    const seekTo = (s: number) => window.dispatchEvent(new CustomEvent('mh-media-seek', { detail: Math.max(0, s) * 1000 }));
+    const seekBy = (delta: number) => { const a = el(); if (a && Number.isFinite(a.duration)) seekTo(Math.min(a.duration - 0.5, a.currentTime + delta)); };
+    const extra: [MediaSessionAction, MediaSessionActionHandler][] = [
+      ['seekto', (d) => { if (d.seekTime != null) seekTo(d.seekTime); }],
+      ['seekbackward', (d) => seekBy(-(d.seekOffset ?? 10))],
+      ['seekforward', (d) => seekBy(d.seekOffset ?? 10)],
+      ['stop', () => { const s = useApp.getState(); if (s.player.playing) s.toggle(); }],
+    ];
+    // Azioni non supportate da un browser lanciano: non devono far saltare le altre
+    for (const [a, h] of extra) { try { ms.setActionHandler(a, h); } catch { /* */ } }
+    return () => {
+      for (const a of ['play', 'pause', 'nexttrack', 'previoustrack', 'seekto', 'seekbackward', 'seekforward', 'stop'] as const) {
+        try { ms.setActionHandler(a, null); } catch { /* */ }
+      }
+    };
   }, []);
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
@@ -390,6 +406,7 @@ export default function PlayerBar() {
   const onTime = (e: React.SyntheticEvent<HTMLAudioElement>) => {
     const a = e.currentTarget;
     if (a !== el()) return; // aggiorna la UI solo l'elemento attivo
+    notePlaybackPos(a.currentTime); // store.prev: "indietro" dopo 3s ricomincia il brano
     clearStall(); // il tempo avanza: lo stream è vivo
     if (manXf.current >= 0) return; // dissolvenza manuale in corso: niente crossfade di coda
     setTime(a.currentTime);
@@ -431,15 +448,10 @@ export default function PlayerBar() {
       s.toast('Timer di spegnimento — musica in pausa', 'info');
       return;
     }
-    const last = s.player.queueIndex >= s.player.queue.length - 1;
     if (s.player.repeat === 'one') {
       a.currentTime = 0;
       void a.play().catch(() => {});
-    } else if (last && s.player.repeat === 'all' && s.player.queue.length) {
-      s.playAt(0);
-    } else if (last && s.player.radio) {
-      void s.radioNext(); // radio infinita: continua con brani simili
-    } else next();
+    } else next(); // store.next: shuffle a sacchetto, repeat 'all', radio a fine coda
   };
 
   // UNA auto-riparazione per videoId per sessione: ricarica la sorgente
@@ -543,13 +555,6 @@ export default function PlayerBar() {
     next();
   };
 
-  // Convenzione player: "indietro" dopo 3s ricomincia il brano, prima torna al precedente
-  const goPrev = () => {
-    const a = el();
-    if (a && time > 3) a.currentTime = 0;
-    else prev();
-  };
-
   return (
     <div className="player-bar h-20 flex items-center gap-4 px-4 shrink-0 relative
       max-md:h-[64px] max-md:px-2 max-md:gap-2 max-md:mb-[60px]
@@ -625,7 +630,7 @@ export default function PlayerBar() {
             className={`transition-colors max-md:hidden ${player.shuffle ? 'text-accent' : 'text-dim hover:text-txt'}`}>
             <Shuffle size={15} />
           </button>
-          <button onClick={goPrev} aria-label="Brano precedente" className="text-dim hover:text-txt"><SkipBack size={18} /></button>
+          <button onClick={prev} aria-label="Brano precedente" className="text-dim hover:text-txt"><SkipBack size={18} /></button>
           <button onClick={toggle} disabled={!cur} aria-label={player.playing ? 'Pausa' : 'Riproduci'}
             className={`player-play rounded-full flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-40 ${player.playing ? 'neon-play' : ''}`}>
             {loading ? <Loader2 size={18} className="animate-spin" /> : player.playing ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
@@ -686,7 +691,8 @@ export default function PlayerBar() {
           className={`transition-colors max-md:hidden ${queueOpen ? 'text-accent' : 'text-dim hover:text-txt'}`}>
           <ListMusic size={17} />
         </button>
-        <button onClick={() => setMuted(!muted)} className="text-dim hover:text-txt max-md:hidden">
+        <button onClick={() => setMuted(!muted)} aria-label={muted ? 'Riattiva audio' : 'Disattiva audio'}
+          title={muted ? 'Riattiva audio' : 'Disattiva audio'} className="text-dim hover:text-txt max-md:hidden">
           {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
         </button>
         <input aria-label="Volume" type="range" min={0} max={1} step={0.05} value={muted ? 0 : player.volume}

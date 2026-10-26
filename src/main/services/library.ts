@@ -133,6 +133,11 @@ export function recentlyPlayed(limit = 10, u = 1): TrackRef[] {
   return merged.sort((a, b) => b._ts - a._ts).slice(0, limit).map(({ _ts, ...t }) => t);
 }
 
+// Id stabile di un file importato: hash del path sorgente (stesso file
+// trascinato due volte = stessa traccia).
+export const localVideoId = (srcPath: string): string =>
+  'local:' + createHash('sha1').update(srcPath.toLowerCase()).digest('hex').slice(0, 12);
+
 // Registra in libreria un file audio locale (da drag&drop): copia nella cartella libreria
 // e legge durata/tag con ffprobe. `probe`/`ffmpegDir` vengono passati dal chiamante (downloader)
 // per evitare un import circolare.
@@ -141,6 +146,16 @@ export function importLocalFile(
   probe: (p: string) => { durationS?: number; title?: string; artist?: string; album?: string },
 ): LibraryTrack | null {
   if (!existsSync(srcPath)) return null;
+  // Già importato (anche se nel cestino) col file ancora al suo posto: niente
+  // nuova copia. Prima ogni re-import copiava "Titolo (2).mp3", spostava la
+  // riga sulla copia e lasciava l'originale orfano su disco — un file intero
+  // sprecato a ogni drag&drop ripetuto.
+  const prev = getDb().prepare('SELECT id, file_path FROM tracks WHERE video_id=?').get(localVideoId(srcPath)) as
+    { id: number; file_path: string } | undefined;
+  if (prev && existsSync(prev.file_path)) {
+    getDb().prepare('UPDATE tracks SET deleted_at=NULL WHERE id=?').run(prev.id);
+    return getTrack(prev.id) ?? null;
+  }
   const meta = probe(srcPath);
   const base = basename(srcPath, extname(srcPath));
   // fallback: "Artista - Titolo.ext" dal nome file
@@ -151,8 +166,9 @@ export function importLocalFile(
     if (m) { artist ||= m[1].trim(); title ||= m[2].trim(); }
     else { title ||= base; artist ||= 'Importato'; }
   }
-  const videoId = 'local:' + createHash('sha1').update(srcPath.toLowerCase()).digest('hex').slice(0, 12);
+  const videoId = localVideoId(srcPath);
   mkdirSync(libraryDir, { recursive: true });
+  // eslint-disable-next-line no-control-regex -- i caratteri di controllo sono proprio ciò che va tolto dai nomi file
   const sanitize = (s: string) => s.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 120);
   // "Dentro la libreria" vuol dire directory = libraryDir, non semplice
   // prefisso di stringa: 'C:\Music\MasterHypeExtra\x.mp3' inizia con

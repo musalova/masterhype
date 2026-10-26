@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { TrackRef, LibraryTrack, DownloadJob, BurnProgress, Settings, SuggestedTrack, RemoteLike, MhUser } from '../../shared/types';
 import { api, isRemote, mediaUrl } from './api';
 import { isOnline, myUserId, setLocalUserId, resyncWhen, isStandalone, remoteBase, remoteToken, claimProfile, watchClaimWindow, markPcFresh } from './remote';
-import { savePref, migratePrefs, syncPrefs, clearLocalPrefs, pushDirty, archiveDirtyValues } from './persist';
+import { savePref, migratePrefs, clearLocalPrefs, pushDirty, archiveDirtyValues } from './persist';
 import { audioDuration, fetchTrackBlob } from './trackFetch';
 import {
   CD_KEY, VOL_KEY, persistCd, savedVolume, XF_KEY, savedXf,
@@ -15,6 +15,7 @@ import { queueRemoteLike, queueLibLike, queueEvent, queueSearchPick, queueListen
 import { cachedAuto, cacheAuto, offlineStation, offlineRadio } from './offlineRec';
 import { phoneReconcile, phoneIndex, phoneIndexPut, phoneIndexDel, phonePut, phoneDel, phoneInvalidate, phoneVidId, phoneMigrateId, phoneEvictOldest, phoneFreeMB } from './phoneLocal';
 import { trackKey } from '../../shared/taste';
+import { nextShuffleIndex, shuffleKey } from './shuffle';
 
 // Chiavi legacy → mh-pref-*: entrano nello store condiviso PC↔telefono
 migratePrefs({
@@ -33,7 +34,6 @@ interface PlayerState {
   queue: (TrackRef & { local?: boolean })[];
   queueIndex: number;
   volume: number;
-  seekTo?: number;
   shuffle: boolean;
   repeat: 'off' | 'all' | 'one';
   radio: boolean; // a fine coda continua con brani simili (upNext)
@@ -184,6 +184,29 @@ interface AppState {
 let toastId = 0;
 let sleepIv: ReturnType<typeof setInterval> | null = null;
 
+// ---- Shuffle a sacchetto + cronologia per "indietro" ----
+// shufflePlayed: chiavi già uscite nel giro corrente (vedi shuffle.ts) —
+// azzerato a ogni NUOVA coda (play da un'altra lista, stazione, radio).
+// playHist: ordine reale di ascolto: in shuffle "indietro" torna al brano
+// suonato prima, non all'indice precedente della coda (che è casuale).
+const shufflePlayed = new Set<string>();
+const playHist: string[] = [];
+const newQueueContext = () => { shufflePlayed.clear(); };
+
+// Posizione del brano corrente (secondi), scritta da PlayerBar a ogni
+// timeupdate: modulo e non stato zustand — niente re-render 4 volte al secondo.
+let playbackPos = 0;
+export const notePlaybackPos = (s: number): void => { playbackPos = s; };
+
+// Indice del brano successivo, UNICO per skip/fine brano (store.next) e
+// crossfade (PlayerBar): rispetta shuffle (sacchetto), repeat e fine coda.
+// null = coda finita → il chiamante decide radio o stop.
+export function pickNextIndex(p: Pick<PlayerState, 'queue' | 'queueIndex' | 'shuffle' | 'repeat'>): number | null {
+  if (p.shuffle && p.queue.length > 1) return nextShuffleIndex(p.queue, p.queueIndex, shufflePlayed, p.repeat === 'all');
+  if (p.queueIndex < p.queue.length - 1) return p.queueIndex + 1;
+  return p.repeat === 'all' && p.queue.length ? 0 : null;
+}
+
 
 export const useApp = create<AppState>((set, get) => ({
   screen: savedScreen(),
@@ -301,6 +324,9 @@ export const useApp = create<AppState>((set, get) => ({
 
   player: { playing: false, queue: [], queueIndex: -1, volume: savedVolume(), ...savedPrefs(), crossfade: savedXf() },
   play: (t, queue, index, radio) => {
+    // Una lista diversa dalla coda attuale = nuovo contesto: lo shuffle
+    // riparte da un giro pulito (playAt/next passano la coda corrente).
+    if (queue !== get().player.queue) newQueueContext();
     let q = (queue ?? [t]) as PlayerState['queue'];
     let found = q.findIndex((x) => x.videoId === t.videoId);
     if (found < 0 && index == null) { q = [t as TrackRef & { local?: boolean }]; found = 0; }
@@ -373,19 +399,30 @@ export const useApp = create<AppState>((set, get) => ({
   stop: () => set((s) => ({ player: { ...s.player, playing: false, current: undefined } })),
   next: () => {
     const p = get().player;
-    if (p.shuffle && p.queue.length > 1) {
-      let i = p.queueIndex;
-      while (i === p.queueIndex) i = Math.floor(Math.random() * p.queue.length);
-      get().play(p.queue[i], p.queue, i);
-      return;
-    }
-    if (p.queueIndex < p.queue.length - 1) get().play(p.queue[p.queueIndex + 1], p.queue, p.queueIndex + 1);
-    else if (p.repeat === 'all' && p.queue.length) get().play(p.queue[0], p.queue, 0);
-    else if (p.radio) void get().radioNext(); // skip manuale sull'ultimo: la radio continua
+    const ni = pickNextIndex(p);
+    if (ni != null) get().play(p.queue[ni], p.queue, ni);
+    else if (p.radio) void get().radioNext(); // coda (o giro shuffle) finita: la radio continua
     else set((s) => ({ player: { ...s.player, playing: false } }));
   },
+  // Convenzione player: dopo 3s "indietro" ricomincia il brano, prima torna
+  // al precedente. Vale per OGNI sorgente del comando (bottone, tasti media,
+  // Ctrl+←, lockscreen): il seek passa da 'mh-media-seek', gestito da PlayerBar.
   prev: () => {
+    if (playbackPos > 3) {
+      playbackPos = 0; // un doppio tap rapido (prima del timeupdate) torna davvero indietro
+      window.dispatchEvent(new CustomEvent('mh-media-seek', { detail: 0 }));
+      return;
+    }
     const p = get().player;
+    if (p.shuffle && playHist.length > 1) {
+      playHist.pop(); // il brano corrente
+      while (playHist.length) {
+        const k = playHist.pop()!;
+        const i = p.queue.findIndex((x) => shuffleKey(x) === k);
+        // play() lo ri-registra in cima alla cronologia
+        if (i >= 0 && i !== p.queueIndex) { get().play(p.queue[i], p.queue, i); return; }
+      }
+    }
     if (p.queueIndex > 0) get().play(p.queue[p.queueIndex - 1], p.queue, p.queueIndex - 1);
   },
   setVolume: (v) => {
@@ -461,6 +498,7 @@ export const useApp = create<AppState>((set, get) => ({
         ?? await offlineStation(stationId, get().library, get().remoteLikeList).catch(() => []);
     }
     if (!tracks?.length) { get().toast('Stazione vuota, riprova tra poco', 'err'); return; }
+    newQueueContext();
     set((s) => ({ player: { ...s.player, queue: tracks, queueIndex: 0, current: tracks[0], playing: true, radio: true, stationCtx: `station:${stationId}` } }));
     get().recordRemote(tracks[0], 'play');
   },
@@ -476,6 +514,7 @@ export const useApp = create<AppState>((set, get) => ({
         ?? await offlineRadio(kind, value).catch(() => []);
     }
     if (!tracks?.length) { get().toast('Radio non disponibile ora', 'err'); return; }
+    newQueueContext();
     set((s) => ({ player: { ...s.player, queue: tracks, queueIndex: 0, current: tracks[0], playing: true, radio: true, stationCtx: `radio:${kind}:${value}` } }));
     get().recordRemote(tracks[0], 'play');
     get().toast(kind === 'artist' ? `Radio di ${value}` : `Radio ${value}`, 'ok');
@@ -502,6 +541,7 @@ export const useApp = create<AppState>((set, get) => ({
   // infinita resta accesa a fine coda (radioNext continua con brani simili).
   playStation: (tracks) => {
     if (!tracks.length) { get().toast('Stazione vuota, riprova tra poco', 'err'); return; }
+    newQueueContext();
     set((s) => ({ player: { ...s.player, queue: tracks as PlayerState['queue'], queueIndex: 0, current: tracks[0] as PlayerState['current'], playing: true, radio: true, stationCtx: selCtx(s.stationSel) } }));
     get().recordRemote(tracks[0], 'play');
   },
@@ -677,6 +717,7 @@ export const useApp = create<AppState>((set, get) => ({
         .map((t) => (typeof t.artist === 'string' && !t.artist.startsWith('[object') ? t : { ...t, artist: 'Sconosciuto' }));
       if (!queue.length) return;
       const index = Math.min(Math.max(0, saved.index ?? 0), queue.length - 1);
+      newQueueContext();
       set((s) => ({
         player: { ...s.player, queue, queueIndex: index, current: queue[index], radio: !!saved.radio, playing: false },
       }));
@@ -1001,6 +1042,23 @@ export const useApp = create<AppState>((set, get) => ({
 }));
 
 
+
+// Brano corrente cambiato → entra nel giro shuffle e nella cronologia di
+// ascolto; la posizione riparte da 0. Confronto per CHIAVE: healVideoId
+// sostituisce l'oggetto corrente (stesso brano, nuovo videoId) e un
+// semplice cambio di riferimento non è un nuovo ascolto.
+useApp.subscribe((s, prev) => {
+  const c = s.player.current;
+  if (!c || c === prev.player.current) return;
+  const k = shuffleKey(c);
+  if (prev.player.current && shuffleKey(prev.player.current) === k) return;
+  playbackPos = 0;
+  shufflePlayed.add(k);
+  if (playHist[playHist.length - 1] !== k) {
+    playHist.push(k);
+    if (playHist.length > 100) playHist.shift();
+  }
+});
 
 // Persistenza coda: salva (debounced) a ogni cambio del player
 let qTimer: ReturnType<typeof setTimeout> | undefined;

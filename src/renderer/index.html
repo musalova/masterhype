@@ -10,7 +10,9 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/png" href="./icon-192.png" />
     <!-- http: serve per il client remoto: telefono → PC sulla stessa rete LAN -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: http: media: data:; media-src 'self' https: http: media:; style-src 'self' 'unsafe-inline'; connect-src 'self' https: http:; font-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: http: media: data:; media-src 'self' https: http: media:; style-src 'self' 'unsafe-inline'; connect-src 'self' https: http:; font-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'" />
+    <!-- frame-ancestors NON va qui: dentro <meta> è ignorato (ed è un errore in
+         console). Anti-iframe = header X-Frame-Options del server remoto. -->
     <!-- Niente Referer verso le thumbnail esterne (i.ytimg.com): l'URL di
          ingresso dal QR può contenere il token di pairing -->
     <meta name="referrer" content="no-referrer" />

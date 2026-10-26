@@ -125,7 +125,9 @@ export default function Search() {
       // PC spento: badge "Nei tuoi gusti" dalla sola libreria cachata
       setTopArtists(new Set(useApp.getState().library.map((t) => norm(t.artist))));
     });
-  }, [library.length]);
+    // Solo sul NUMERO di brani: un like cambia l'array `library` ma non gli
+    // artisti — rifare stats() a ogni cuoricino sarebbe una fetch inutile.
+  }, [library.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doSearch = async (e?: React.FormEvent, query?: string) => {
     e?.preventDefault();
@@ -197,7 +199,7 @@ export default function Search() {
       }).catch(() => {});
     }, 220);
     return () => clearTimeout(t);
-  }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [q]);
 
   const pickSuggestion = (s: string) => {
     setQ(s);

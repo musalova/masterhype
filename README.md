@@ -37,11 +37,24 @@ Il PC espone HTTP su `0.0.0.0:48484` **in chiaro per scelta** (LAN domestica): l
 ```bash
 npm ci
 npm run dev            # Electron in sviluppo
-npx tsc --noEmit       # typecheck
-npx vitest run         # test
-npm run build          # bundle main+preload+renderer
+npm run check          # typecheck + lint + test (lo stesso gate della CI)
+npm run lint           # solo ESLint
+npm run build          # bundle main+preload+renderer (renderer minificato)
 npm run build:android  # APK (release-firmato se presente keystore.properties)
 ```
+
+### Qualità e verifica
+
+- **CI** (GitHub Actions, Windows): typecheck → ESLint → vitest → build →
+  `npm audit --omit=dev` (le dipendenze del prodotto restano a 0 vulnerabilità
+  note) + compilazione del progetto Android.
+- **Test**: vitest su logica pura e su server/DB reali (SQLite in-memory, HTTP
+  vero su loopback): gusti, sync offline, auth remota, pairing, update, shuffle,
+  scritture atomiche, import.
+- **Audit UI isolati** (Electron con profilo temporaneo, non toccano l'app
+  installata) dopo `npm run build`: `node scripts/audit-appearance.mjs`
+  (temi, 5 viewport, movimento ridotto) e `node scripts/audit-loading.mjs`
+  (splash, skeleton, errori di chunk con recupero).
 
 ### Binari degli strumenti (`resources/bin/`, non in git)
 

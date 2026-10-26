@@ -3,7 +3,7 @@ import { IPC } from '../shared/types';
 import type {
   Settings, TrackRef, SearchResult, DownloadJob, LibraryTrack, Playlist,
   SuggestedTrack, TrendItem, DriveInfo, BurnProgress, AssistantRequest,
-  AssistantResult, AppStats, AlbumRef, ArtistPage, RemoteLike, LyricsResult,
+  AssistantResult, AppStats, ArtistPage, RemoteLike, LyricsResult,
   PlayStreamResult, IssueStats, MhUser, MhDevice, OnboardArtist, AppInfo, AppUpdateState,
 } from '../shared/types';
 

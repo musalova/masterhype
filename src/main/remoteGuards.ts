@@ -47,6 +47,7 @@ const AUDIO_EXT = /\.(mp3|m4a|aac|flac|wav|ogg|opus|webm|wma)$/i;
 export function safeUploadName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const base = raw.split(/[\\/]/).pop() ?? '';
+  // eslint-disable-next-line no-control-regex -- i caratteri di controllo sono proprio ciò che va tolto dai nomi file
   const clean = base.replace(/[<>:"|?*\x00-\x1f]/g, '').replace(/^\.+/, '').trim().slice(0, 150);
   return clean && AUDIO_EXT.test(clean) ? clean : null;
 }

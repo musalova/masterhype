@@ -22,6 +22,7 @@ export function text(v: unknown): string {
 // Primo run con un endpoint del tipo richiesto (ARTIST, ALBUM…) dentro un Text
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function runWithType(node: any, kind: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const runs: any[] = node?.runs ?? (Array.isArray(node) ? node : []);
   const r = runs.find((x) =>
     String(x?.endpoint?.payload?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType ?? '')
@@ -397,7 +398,7 @@ export function finalizeSearch(res: any, out: SearchResult, query: string): void
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function applySearchFilters(res: any, out: SearchResult): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let chips: any[] = [];
+  let chips: any[];
   try {
     const raw = res.header?.chips;
     chips = Array.isArray(raw) ? raw : Array.from(raw ?? []);

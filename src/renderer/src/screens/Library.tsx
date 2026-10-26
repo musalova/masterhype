@@ -236,7 +236,7 @@ export default function Library() {
             <button onClick={bulkDelete} disabled={!!bulkBusy} className="text-xs px-3 py-1.5 rounded-lg bg-panel hover:bg-red-500/20 flex items-center gap-1.5 text-dim hover:text-red-400 disabled:opacity-50">
               <Trash2 size={13} /> Elimina
             </button>
-            <button onClick={clearSel} className="p-1.5 text-dim hover:text-txt"><X size={14} /></button>
+            <button onClick={clearSel} aria-label="Annulla selezione" title="Annulla selezione" className="p-1.5 text-dim hover:text-txt"><X size={14} /></button>
           </motion.div>
         )}
       </AnimatePresence>

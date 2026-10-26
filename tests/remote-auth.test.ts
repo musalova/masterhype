@@ -233,4 +233,33 @@ describe('server remoto — auth a due livelli (admin / device token)', () => {
     expect((await call(IPC.remoteInfo, [], devTok)).status).toBe(403);
     expect(((await call(IPC.remoteInfo, [])).r as { token: string }).token).toBe(ADMIN);
   });
+
+  it('header di sicurezza su ogni risposta (UI, API, errori di auth)', async () => {
+    for (const res of [
+      await fetch(`${base}/`),
+      await fetch(`${base}/api/info`, { headers: { 'X-MH-Token': ADMIN } }),
+      await fetch(`${base}/api/info`), // 401
+    ]) {
+      expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(res.headers.get('x-frame-options')).toBe('SAMEORIGIN');
+      expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+    }
+  });
+
+  it('codice admin: solo match esatto (confronto a tempo costante, niente prefissi)', async () => {
+    expect((await call(IPC.usersCurrent, [], ADMIN.slice(0, -1))).status).toBe(401);
+    expect((await call(IPC.usersCurrent, [], `${ADMIN}x`)).status).toBe(401);
+    expect((await call(IPC.usersCurrent, [], ADMIN)).status).toBe(200);
+  });
+
+  it('/pair: corpo oltre il tetto → nessun device mintato a vuoto', async () => {
+    openPairingWindow(60_000);
+    const before = listDevices().length;
+    const huge = JSON.stringify({ name: 'x'.repeat(64_000) });
+    await fetch(`${base}/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: huge })
+      .catch(() => null); // il server chiude il socket: errore di rete atteso
+    await new Promise((r) => setTimeout(r, 50));
+    expect(listDevices().length).toBe(before);
+    openPairingWindow(0);
+  });
 });

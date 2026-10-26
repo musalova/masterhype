@@ -1,8 +1,9 @@
 import { app } from 'electron';
 import { join } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { mkdirSync } from 'fs';
 import { randomBytes } from 'crypto';
 import type { Settings } from '../shared/types';
+import { writeFileAtomic, readJsonWithBackup, snapshotBackup } from './fsAtomic';
 
 let settings: Settings;
 
@@ -35,21 +36,21 @@ export function initSettings(): Settings {
   const dir = app.getPath('userData');
   mkdirSync(dir, { recursive: true });
   const file = join(dir, 'settings.json');
-  if (existsSync(file)) {
-    try {
-      settings = { ...defaults(), ...JSON.parse(readFileSync(file, 'utf-8')) };
-    } catch {
-      settings = defaults();
-    }
-  } else {
-    settings = defaults();
-  }
+  // File corrotto (blackout a metà scrittura, disco pieno): si ripiega sulla
+  // copia dell'ultimo avvio riuscito invece di azzerare tutto — cartella
+  // libreria, chiavi Spotify/Last.fm e codice del PC sopravvivono.
+  const loaded = readJsonWithBackup<unknown>(file);
+  const saved = loaded && loaded.value && typeof loaded.value === 'object' && !Array.isArray(loaded.value)
+    ? loaded.value as Partial<Settings> : {};
+  settings = { ...defaults(), ...saved };
+  if (loaded?.fromBackup) writeFileAtomic(file, JSON.stringify(settings, null, 2)); // ripara il principale
+  else if (loaded) snapshotBackup(file);
   // Un disco removibile sparito non deve impedire l'avvio dell'app
   try { mkdirSync(settings.libraryDir, { recursive: true }); } catch { /* drive mancante */ }
   // Token di pairing per il server LAN: generato una volta, poi stabile
   if (!settings.remoteToken) {
     settings.remoteToken = randomBytes(6).toString('base64url'); // 8 caratteri, leggibile
-    writeFileSync(file, JSON.stringify(settings, null, 2));
+    writeFileAtomic(file, JSON.stringify(settings, null, 2));
   }
   return settings;
 }
@@ -66,7 +67,7 @@ export function setSettingsChangedHook(fn: (patch: Partial<Settings>) => void): 
 
 export function setSettings(patch: Partial<Settings>): Settings {
   settings = { ...settings, ...patch };
-  writeFileSync(join(app.getPath('userData'), 'settings.json'), JSON.stringify(settings, null, 2));
+  writeFileAtomic(join(app.getPath('userData'), 'settings.json'), JSON.stringify(settings, null, 2));
   // Drive removibile assente: non deve far fallire il salvataggio delle altre opzioni
   if (patch.libraryDir) try { mkdirSync(settings.libraryDir, { recursive: true }); } catch { /* */ }
   try { onSettingsChanged(patch); } catch { /* hook non deve rompere il salvataggio */ }

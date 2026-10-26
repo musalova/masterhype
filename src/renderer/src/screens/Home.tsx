@@ -110,7 +110,7 @@ function Onboarding({ onDone }: { onDone: () => void }) {
       }).catch(() => {});
     });
   }, []);
-  const toggle = (n: string) => setSel((s) => { const x = new Set(s); x.has(n) ? x.delete(n) : x.add(n); return x; });
+  const toggle = (n: string) => setSel((s) => { const x = new Set(s); if (x.has(n)) x.delete(n); else x.add(n); return x; });
   const addCustom = () => { const n = custom.trim(); if (n) { setSel((s) => new Set(s).add(n)); setCustom(''); } };
   const finish = async () => {
     setBusy(true);
@@ -156,7 +156,7 @@ function Onboarding({ onDone }: { onDone: () => void }) {
           <div className="relative">
             <input value={custom} onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addCustom(); }}
               placeholder="Altro artista…" className="bg-panel2 border border-line rounded-full px-4 py-2 text-sm outline-none focus:border-accent w-52" />
-            {custom && <button onClick={addCustom} className="absolute right-2 top-1/2 -translate-y-1/2 text-accent"><Plus size={16} /></button>}
+            {custom && <button onClick={addCustom} aria-label={`Aggiungi ${custom}`} title="Aggiungi" className="absolute right-2 top-1/2 -translate-y-1/2 text-accent"><Plus size={16} /></button>}
           </div>
           <div className="flex-1" />
           <button onClick={onDone} className="text-xs text-dim hover:text-txt px-3 py-2">Salta per ora</button>

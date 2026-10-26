@@ -1,5 +1,4 @@
 import type { MasterHypeApi } from '../../preload/index';
-import { isRemote } from './remote';
 import { remoteApi } from './remoteApi';
 
 declare global {

@@ -137,9 +137,6 @@ function db(): Promise<IDBDatabase> {
   return dbp;
 }
 
-const req = <T>(r: IDBRequest<T>): Promise<T> =>
-  new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
-
 async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const d = await db();
   return new Promise((res, rej) => {

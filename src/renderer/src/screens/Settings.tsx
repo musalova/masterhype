@@ -217,7 +217,7 @@ function DevicesList() {
   useEffect(() => {
     load();
     return api().pairing.onUsed(() => load()); // un pairing appena riuscito appare subito
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
   if (!devs.length) return null;
   const assign = async (d: MhDevice, userId: number | null) => {
     setBusy(true);
@@ -641,7 +641,6 @@ export default function Settings() {
   const [lfmOk, setLfmOk] = useState<boolean | null>(null);
   const [spConnected, setSpConnected] = useState(false);
   const [taste, setTaste] = useState<{ kind: string; value: string; weight: number }[]>([]);
-  const [confirmReset, setConfirmReset] = useState(false);
   const [diag, setDiag] = useState<IssueStats | null>(null);
   const [confirmDiag, setConfirmDiag] = useState(false);
   const [remoteInfo, setRemoteInfo] = useState<{ enabled: boolean; ip: string; port: number; token: string; alts?: string[] } | null>(null);
@@ -695,7 +694,7 @@ export default function Settings() {
     if (!c?.code) { setQr(''); return; }
     const url = `http://${remoteInfo.ip}:${remoteInfo.port}/?pair=${c.code}`;
     setQr(await QRCode.toDataURL(url, { width: 200, margin: 1, color: { dark: '#f2f2f8', light: '#0a0a0b' } }).catch(() => ''));
-  }, [remoteInfo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [remoteInfo]);
   useEffect(() => {
     void mintQr();
     const iv = setInterval(() => void mintQr(), 4 * 60_000);
@@ -799,7 +798,7 @@ export default function Settings() {
             <div className="flex gap-2">
               <button onClick={async () => { const d = await api().sys.pickFolder(); if (d) await save({ libraryDir: d }); }}
                 className="text-xs px-3 py-1.5 rounded-lg bg-panel2 hover:bg-line">Cambia…</button>
-              <button onClick={() => api().sys.openFolder(s.libraryDir)}
+              <button onClick={() => api().sys.openFolder(s.libraryDir)} aria-label="Apri la cartella della libreria" title="Apri cartella"
                 className="text-xs px-3 py-1.5 rounded-lg bg-panel2 hover:bg-line flex items-center gap-1"><FolderOpen size={12} /></button>
             </div>
           </Row>

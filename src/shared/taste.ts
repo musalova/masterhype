@@ -25,7 +25,7 @@ export const trackKey = (artist: string, title: string): string =>
 // "Song" copre anche "Song (Remastered)" e "Song - Live".
 export const baseTitleOf = (t: string): string => normText(
   (t ?? '')
-    .replace(/\s*[\(\[][^)\]]*[\)\]]/g, ' ')
+    .replace(/\s*[([][^)\]]*[)\]]/g, ' ')
     .replace(/\s+-\s+(?:remaster(?:ed)?|live|remix|acoustic|deluxe|mono|stereo|radio edit|single version|edit|version)\b.*$/i, ' '));
 
 // Chiave fuzzy per i filtri gusto (brani skippati/nascosti, blocchi artista).

@@ -47,7 +47,7 @@ function collectSafe(res: any, out: SearchResult, isMusic = true): void {
   // collect è best-effort ma un tipo di card nuovo può lanciare a metà —
   // teniamo ciò che ha già raccolto. La risposta della ricerca generica
   // (fallback) non ha item_type: va raccolta come video, non come brani.
-  try { isMusic ? collect(res, out) : collectVideoFallback(res, out); } catch { /* raccolta parziale */ }
+  try { if (isMusic) collect(res, out); else collectVideoFallback(res, out); } catch { /* raccolta parziale */ }
 }
 
 // Ricerca "leggera": solo brani, senza espansione per categoria.

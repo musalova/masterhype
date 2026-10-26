@@ -1,0 +1,22 @@
+# Aggiornamenti dipendenze: PR raggruppate e settimanali, mai auto-merge.
+# Le major (Electron, Capacitor, vitest…) arrivano a parte: richiedono test
+# su device reali (APK) e sul PC-server prima di entrare.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      minor-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2

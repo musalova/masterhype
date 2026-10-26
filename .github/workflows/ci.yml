@@ -5,9 +5,20 @@ on:
     branches: [main]
   pull_request:
 
+# Minimo privilegio: la CI legge il codice e basta (niente scrittura su
+# release/contenuti anche se uno step venisse compromesso).
+permissions:
+  contents: read
+
+# Un push nuovo sullo stesso branch/PR annulla la run vecchia.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,13 +28,20 @@ jobs:
       - run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: Lint
+        run: npx eslint .
       - name: Tests
         run: npx vitest run
       - name: Build (main + preload + renderer)
         run: npm run build
+      # Le dipendenze che finiscono nel prodotto devono restare a 0
+      # vulnerabilità note (quelle dev-only non entrano nell'installer/APK).
+      - name: Audit dipendenze di produzione
+        run: npm audit --omit=dev --audit-level=moderate
 
   android-compile:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

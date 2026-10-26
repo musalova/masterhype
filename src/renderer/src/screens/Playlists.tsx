@@ -222,7 +222,7 @@ export default function Playlists() {
               <option value="cd-audio">Destinata a CD Audio</option>
               <option value="cd-mp3">Destinata a CD MP3</option>
             </select>
-            <button onClick={create} className="px-3 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/80">
+            <button onClick={create} aria-label="Crea playlist" title="Crea playlist" className="px-3 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/80">
               <Plus size={15} />
             </button>
           </div>
@@ -318,6 +318,7 @@ export default function Playlists() {
                         setConfirmDel(false);
                         if (await plAction(() => api().playlists.remove(cur.id), 'Playlist eliminata')) setOpen(null);
                       }}
+                      aria-label={confirmDel ? 'Conferma eliminazione playlist' : 'Elimina playlist'} title="Elimina playlist"
                       className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 ${confirmDel ? 'bg-red-500/25 text-red-300' : 'bg-panel2 hover:bg-red-500/20 text-dim hover:text-red-400'}`}>
                       <Trash2 size={12} />{confirmDel && <span>Sicuro?</span>}</button>
                   </div>

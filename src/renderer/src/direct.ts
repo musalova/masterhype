@@ -181,14 +181,12 @@ async function probeStreamUrl(u: string): Promise<boolean> {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function formatUrl(yt: Yt, f: any): Promise<string | undefined> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let u: unknown = f.url;
   // decipher() è ASYNC e vuole il player della sessione: chiamarlo in sync
   // restituirebbe una Promise truthy scambiata per URL (bug latente: oggi i
   // client ANDROID/IOS mandano url in chiaro, ma se un giorno mandano solo
   // signature_cipher questo codice deve già funzionare).
   if (typeof u !== 'string' || !u) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d = f.decipher as ((p?: unknown) => Promise<string>) | undefined;
     if (d) u = await d.call(f, yt.session.player).catch((e) => {
       const w = window as unknown as { __ytDbg: Record<string, unknown> };
@@ -212,6 +210,7 @@ function formatPool(info: any, wantVideo: boolean, maxH?: number): any[] {
     const capped = maxH ? prog.filter((f: any) => (f.height ?? 0) <= maxH) : prog;
     return capped.length ? capped : prog;
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return fmts.filter((f: any) => f.has_audio && !f.has_video)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .sort((a: any, b: any) => {
@@ -293,8 +292,8 @@ async function streamUrl(videoId: string, wantVideo = false, maxH?: number, dead
         const u = await formatUrl(yt, f);
         if (!u) continue;
         probed++;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (await probeStreamUrl(stamp(u))) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ydbg('picked', `${c}|${(f as any).mime_type}`);
           noteClientSample(c, performance.now() - tc, true);
           cascadeOk();
@@ -606,7 +605,7 @@ export async function directLyrics(artist: string, title: string, durationS?: nu
   let r = durationS ? await j<Row>(`https://lrclib.net/api/get?${base}&duration=${Math.round(durationS)}`) : null;
   if (!has(r)) r = await j<Row>(`https://lrclib.net/api/get?${base}`);
   if (!has(r)) {
-    const cleanTitle = title.replace(/\s*[\(\[][^)\]]*[\)\]]/g, '').trim();
+    const cleanTitle = title.replace(/\s*[([][^)\]]*[)\]]/g, '').trim();
     for (const q of [`${artist} ${title}`, `${artist} ${cleanTitle}`]) {
       if (!q.trim() || has(r)) break;
       const s = await j<Row[]>(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`);

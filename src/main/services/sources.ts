@@ -185,7 +185,7 @@ export async function fetchLyrics(artist: string, title: string, durationS?: num
   if (!has(r)) r = await j<Row>(`https://lrclib.net/api/get?${base}`, UA);
   if (!has(r)) {
     // Tolgo "(feat. X)", "(Remastered)", "[Live]" ecc: riducono il match
-    const cleanTitle = title.replace(/\s*[\(\[][^)\]]*[\)\]]/g, '').trim();
+    const cleanTitle = title.replace(/\s*[([][^)\]]*[)\]]/g, '').trim();
     for (const q of [`${artist} ${title}`, `${artist} ${cleanTitle}`]) {
       if (!q.trim() || has(r)) break;
       const s = await j<Row[]>(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`, UA);

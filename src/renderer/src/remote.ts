@@ -580,7 +580,7 @@ async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
     // marcare offline (fail-fast globale, ytCall→diretto, banner) un probe
     // /api/info decide: PC vivo → errore della singola chiamata, niente offline.
     if (ac.signal.aborted && conf && (await fetchInfo(conf.base)) !== null) {
-      throw new Error('timeout: il PC non ha risposto in tempo');
+      throw new Error('timeout: il PC non ha risposto in tempo', { cause: e });
     }
     // Rete assente (Wi-Fi spento, PC giù): segnala offline e calcia subito il
     // probe — altrimenti il fail-fast terrebbe l'app "offline" fino al prossimo

@@ -272,7 +272,7 @@ export default function NowPlaying({ cur, time, dur, playing, onClose, onSeek }:
     if (idleT.current) clearTimeout(idleT.current);
     idleT.current = setTimeout(() => setIdle(true), 2500);
   };
-  useEffect(() => { if (mode === 'cinema') wake(); else setIdle(false); return () => { if (idleT.current) clearTimeout(idleT.current); }; }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (mode === 'cinema') wake(); else setIdle(false); return () => { if (idleT.current) clearTimeout(idleT.current); }; }, [mode]);
 
   const cinema = mode === 'cinema';
   const hideUi = cinema && idle && playing;
@@ -335,7 +335,9 @@ export default function NowPlaying({ cur, time, dur, playing, onClose, onSeek }:
         {/* Su mobile i toggle secondari escono dalla mini-bar e vivono qui */}
         <div className="flex items-center gap-3 md:hidden shrink-0">
           <button onClick={toggleShuffle} title="Riproduzione casuale" className={shuffle ? 'text-accent' : 'text-white/60'}><Shuffle size={16} /></button>
-          <button onClick={cycleRepeat} className={repeat !== 'off' ? 'text-accent' : 'text-white/60'}>{repeat === 'one' ? <Repeat1 size={16} /> : <Repeat size={16} />}</button>
+          <button onClick={cycleRepeat} title={repeat === 'one' ? 'Ripeti brano' : repeat === 'all' ? 'Ripeti tutto' : 'Ripetizione off'}
+            aria-label={repeat === 'one' ? 'Ripeti brano' : repeat === 'all' ? 'Ripeti tutto' : 'Ripetizione off'}
+            className={repeat !== 'off' ? 'text-accent' : 'text-white/60'}>{repeat === 'one' ? <Repeat1 size={16} /> : <Repeat size={16} />}</button>
           <button onClick={toggleRadio} title="Radio infinita" className={radio ? 'text-accent' : 'text-white/60'}><Radio size={16} /></button>
           <MobileSleep />
         </div>

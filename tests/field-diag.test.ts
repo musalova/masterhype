@@ -66,7 +66,7 @@ describe('fieldDiag — telemetria dal campo', () => {
   it('rete cade a metà drain → il resto resta in coda (merge-safe)', async () => {
     enqueueIssue('a', {});
     enqueueIssue('b', {});
-    h.impl = (c) => { if (h.remote.length > 1) { h.online = false; throw new Error('net down'); } };
+    h.impl = (_c) => { if (h.remote.length > 1) { h.online = false; throw new Error('net down'); } };
     const r = await drainFieldDiag();
     expect(r.sent).toBe(1);
     expect(pendingDiagCount()).toBe(1); // 'b' conservato per il prossimo drain

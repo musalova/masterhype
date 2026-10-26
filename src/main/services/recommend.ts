@@ -7,7 +7,7 @@ import { getDb } from '../db';
 import { mapLimit } from './util';
 import type { TrackRef, SuggestedTrack, AssistantRequest, AssistantResult } from '../../shared/types';
 import { STATIONS } from '../../shared/types';
-import { normText as norm, normTag, trackKey as key, baseTitleOf as baseTitle, trackBaseKey as baseKey } from '../../shared/taste';
+import { normText as norm, normTag, trackKey as key, trackBaseKey as baseKey } from '../../shared/taste';
 import { parsePrompt } from './promptParse';
 export { parsePrompt };
 

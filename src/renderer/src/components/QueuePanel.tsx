@@ -12,7 +12,7 @@ export default function QueuePanel({ onClose }: { onClose: () => void }) {
       className="absolute bottom-24 right-4 w-80 max-h-96 bg-panel border border-line rounded-xl shadow-2xl shadow-black/60 flex flex-col z-50 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-line">
         <span className="text-sm font-semibold">In coda · {player.queue.length}</span>
-        <button onClick={onClose} className="text-dim hover:text-txt"><X size={15} /></button>
+        <button onClick={onClose} aria-label="Chiudi la coda" title="Chiudi" className="text-dim hover:text-txt"><X size={15} /></button>
       </div>
       <div className="overflow-y-auto flex-1 py-1">
         {player.queue.map((t, i) => (
@@ -28,7 +28,8 @@ export default function QueuePanel({ onClose }: { onClose: () => void }) {
             </div>
             {i === player.queueIndex && player.playing && <div className="eq"><i /><i /><i /></div>}
             <button onClick={(e) => { e.stopPropagation(); removeFromQueue(i); }}
-              className="opacity-0 group-hover:opacity-100 text-dim hover:text-red-400 transition-opacity"><X size={13} /></button>
+              aria-label={`Togli ${t.title} dalla coda`} title="Togli dalla coda"
+              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100 text-dim hover:text-red-400 transition-opacity"><X size={13} /></button>
           </div>
         ))}
         {player.queue.length === 0 && <div className="px-4 py-6 text-xs text-dim text-center">Coda vuota — riproduci un brano.</div>}

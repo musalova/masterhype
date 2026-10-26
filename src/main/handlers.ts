@@ -18,6 +18,7 @@ import * as telemetry from './services/telemetry';
 import * as engine from './services/engine';
 import { exportBackup, importBackup } from './services/backup';
 import { getDb } from './db';
+import { writeFileAtomic } from './fsAtomic';
 
 // Mappa canale → handler: UNICA sorgente di verità, usata sia da ipc.ts
 // (ipcMain.handle) sia dal server remoto LAN (remote.ts). Così il telefono
@@ -136,7 +137,7 @@ function loadPlPending(): PendingPlAdd[] {
   return plPending;
 }
 function savePlPending(): void {
-  try { writeFileSync(plPendingFile(), JSON.stringify(plPending ?? [])); } catch { /* */ }
+  try { writeFileAtomic(plPendingFile(), JSON.stringify(plPending ?? [])); } catch { /* */ }
 }
 function addRefToPlaylist(u: number, plId: number, t: TrackRef): { added: boolean; queued: boolean } {
   const lib = (t?.id != null && t.id > 0 ? library.getTrack(t.id, u) : undefined) ?? (t?.videoId ? library.findByVideoId(t.videoId, u) : undefined);

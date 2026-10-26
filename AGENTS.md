@@ -813,7 +813,9 @@
   `X-Frame-Options: SAMEORIGIN` su ogni risposta (anti MIME-sniffing e
   anti-clickjacking — la pagina di pairing non deve essere ingabbiabile).
 - **CSP index.html**: include `object-src 'none'; base-uri 'self';
-  form-action 'none'; frame-ancestors 'self'` — po.html resta same-origin.
+  form-action 'none'` — po.html resta same-origin. MAI `frame-ancestors`
+  nel `<meta>`: Chromium lo ignora e logga un errore a ogni avvio (l'anti-
+  iframe è l'header X-Frame-Options del server remoto).
 - **Failover SW proxy**: dopo un cambio di `conf.base` in probeRemoteHealth
   chiamare SEMPRE `swAnnounce()` — senza, /__pc/* resta puntato al base
   morto (media rotti fino al re-pairing).
@@ -826,3 +828,48 @@
   un dep spostato in `dependencies` gonfia l'asar senza motivo.
 - Root repo: screenshot in `docs/screenshots/`, LICENSE MIT presente,
   `engines.node >= 22.5` (node:sqlite).
+
+## Secondo passaggio (ottobre 2026) — vincoli da non regredire
+
+- **Renderer minificato** (`minify: 'esbuild'` in electron.vite.config.ts):
+  electron-vite lo spegne di default, ma questo bundle va anche ai telefoni
+  (Wi-Fi + APK). JS totale 3.5MB → 1.7MB, entry 758KB → 290KB. youtubei.js usa
+  `constructor.name` solo nei messaggi d'errore: minificazione sicura. Verifica
+  dopo ogni cambio di build: `audit-appearance.mjs` + `audit-loading.mjs`.
+- **Shuffle a sacchetto** (`src/renderer/src/shuffle.ts`, puro + test): ogni
+  brano esce una volta per giro; giro finito → repeat 'all' ne apre un altro,
+  altrimenti fine coda (radio o stop). `pickNextIndex` nello store è l'UNICA
+  scelta del brano successivo — la usano `store.next` E il crossfade di
+  PlayerBar (mai più due random diversi). `onEnded` delega a `next()` dopo
+  repeat-one/sleep. Il giro si azzera a ogni NUOVA coda (`newQueueContext`:
+  play da altra lista, stazione, radio, ripristino coda).
+- **"Indietro" unico** in `store.prev`: >3s ricomincia il brano (via evento
+  `mh-media-seek`, gestito da PlayerBar), in shuffle risale `playHist`
+  (ordine reale di ascolto). Bottone, tasti media, Ctrl+←, lockscreen e
+  notifica Android passano TUTTI da lì. La posizione arriva da
+  `notePlaybackPos` (variabile di modulo, non stato zustand: niente re-render).
+- **Media Session web**: `seekto/seekbackward/seekforward/stop` +
+  `setPositionState` (dentro `pushMs`) — timeline e scrub nell'overlay
+  multimediale di Windows e nei controlli del browser.
+- **Scritture atomiche** (`src/main/fsAtomic.ts`): settings.json, coda
+  download, attese playlist → tmp + fsync + rename. settings.json ha la copia
+  `.bak` dell'ultimo avvio riuscito: un file troncato da un blackout ripiega
+  lì invece di azzerare cartella libreria/chiavi/codice del PC.
+- **Server remoto**: codice admin confrontato con `timingSafeEqual` sugli
+  sha256; `/pair` (unica route anonima) legge al massimo 4KB e non minta
+  device se il client è sparito; upload omonimi in parallelo → 409.
+- **Import locale**: un file già importato (anche nel cestino) non viene
+  ricopiato né riconta l'evento 'download' (prima: copia orfana + gusti
+  gonfiati a ogni re-drop). `localVideoId(path)` in library.ts.
+- **Downloader**: tetto di 200 job finiti in memoria (tray-resident per
+  settimane).
+- **Android**: `allowBackup="false"` (il backup cloud clonava il device token)
+  e `PlaybackService exported="false"` (qualsiasi app poteva avviarlo con
+  extras arbitrari). Notifica/tasti media funzionano lo stesso: PendingIntent
+  dell'app + MediaSession.Callback.
+- **Lint**: `npm run lint` (ESLint 10 flat config, `eslint.config.mjs`) in CI
+  insieme a typecheck/test/build e a `npm audit --omit=dev` (prod a 0 vuln).
+  `npm run check` = tsc + eslint + vitest. rules-of-hooks è errore;
+  exhaustive-deps warning con disable inline motivati.
+- **CI**: `permissions: contents: read`, `concurrency` cancel-in-progress,
+  timeout 30min. Dependabot settimanale raggruppato (major a mano).

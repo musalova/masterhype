@@ -1,7 +1,7 @@
 import { powerSaveBlocker, Notification } from 'electron';
 import { spawn, execFile } from 'child_process';
 import { join } from 'path';
-import { writeFileSync, mkdirSync, existsSync, copyFileSync, rmSync, readdirSync, statfsSync, linkSync, statSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, copyFileSync, rmSync, statfsSync, linkSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import type { DriveInfo, BurnProgress, LibraryTrack } from '../../shared/types';

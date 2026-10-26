@@ -115,8 +115,9 @@ async function init(): Promise<PoMinter | null> {
     body: JSON.stringify([REQUEST_KEY, bgResponse]),
   });
   if (!itRes.ok) { dbg(`integrity-http-${itRes.status}`); return null; }
+  // [integrityToken, estimatedTtlSecs, mintRefreshThreshold, websafeFallbackToken]: serve solo il primo
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [integrityToken, estimatedTtlSecs, mintRefreshThreshold, websafeFallbackToken] = await itRes.json() as any[];
+  const [integrityToken] = await itRes.json() as any[];
   // WebPoMinter.create fa `mintCallback instanceof Function` — il callback
   // vive nel realm dell'iframe → instanceof cross-realm fallirebbe sempre
   // (APF:Failed). Reimplementiamo il minter con check typeof e copia dei

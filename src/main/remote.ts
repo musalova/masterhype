@@ -2,6 +2,7 @@ import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http
 import { networkInterfaces } from 'node:os';
 import { existsSync, statSync, createReadStream, createWriteStream, mkdirSync, unlinkSync } from 'node:fs';
 import { join, extname, normalize, dirname } from 'node:path';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { app, powerSaveBlocker } from 'electron';
 import { handlers } from './handlers';
 import { getSettings } from './settings';
@@ -122,12 +123,18 @@ interface Auth {
   userId: number | null;
 }
 
+// Confronto a tempo costante del codice admin: `===` esce al primo carattere
+// diverso e su LAN il tempo di risposta rivela quanti caratteri iniziali sono
+// giusti. Gli sha256 hanno lunghezza fissa → timingSafeEqual non lancia mai.
+const sha = (s: string) => createHash('sha256').update(s).digest();
+const sameSecret = (a: string, b: string) => timingSafeEqual(sha(a), sha(b));
+
 function authed(req: IncomingMessage): Auth | null {
   const token = req.headers['x-mh-token'] ??
     new URL(req.url ?? '/', 'http://x').searchParams.get('token');
   if (typeof token !== 'string' || !token) return null;
   const shared = getSettings().remoteToken;
-  if (shared && token === shared) return { admin: true, userId: null };
+  if (shared && sameSecret(token, shared)) return { admin: true, userId: null };
   const d = devices.deviceByToken(token);
   return d ? { admin: false, deviceId: d.id, userId: d.userId } : null;
 }
@@ -347,18 +354,25 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, auth: Auth):
     if (u == null) { json(res, 401, { e: 'profilo non valido' }); return; }
     const name = safeUploadName(url.searchParams.get('name'));
     if (!name) { json(res, 400, { e: 'file audio non valido' }); return; }
+    // Il nome del file temporaneo è il nome originale (serve al fallback
+    // "Artista - Titolo" dell'import): due upload omonimi in parallelo (due
+    // telefoni, doppio tap) si sarebbero scritti sopra a vicenda.
+    const lockKey = name.toLowerCase();
+    if (uploadsInFlight.has(lockKey)) { json(res, 409, { e: 'upload dello stesso file già in corso' }); return; }
+    uploadsInFlight.add(lockKey);
     const dir = join(app.getPath('userData'), 'imports');
-    mkdirSync(dir, { recursive: true });
     const tmp = join(dir, name);
-    const ok = await readBodyToFile(req, tmp, 400_000_000);
-    if (!ok) { try { unlinkSync(tmp); } catch { /* */ } json(res, 413, { e: 'upload interrotto o troppo grande' }); return; }
     try {
+      mkdirSync(dir, { recursive: true });
+      const ok = await readBodyToFile(req, tmp, 400_000_000);
+      if (!ok) { try { unlinkSync(tmp); } catch { /* */ } json(res, 413, { e: 'upload interrotto o troppo grande' }); return; }
       const n = await (handlers[IPC.libraryImport] as (u: number, p: string[]) => Promise<number>)(u, [tmp]);
       json(res, 200, { r: n });
     } catch (e) {
       json(res, 500, { e: e instanceof Error ? e.message : String(e) });
     } finally {
-      try { unlinkSync(tmp); } catch { /* ancora aperto: resta, verrà sovrascritto */ }
+      uploadsInFlight.delete(lockKey);
+      try { unlinkSync(tmp); } catch { /* ancora aperto o mai creato */ }
     }
     return;
   }
@@ -448,10 +462,15 @@ function readBodyToFile(req: IncomingMessage, file: string, max: number): Promis
   });
 }
 
-function readBody(req: IncomingMessage): Promise<{ c?: string; a?: unknown[]; k?: string; v?: unknown; name?: string; code?: string } | null> {
+const uploadsInFlight = new Set<string>();
+
+// max: tetto del corpo JSON. 5MB per /api/call (backup import, code lunghe);
+// le route NON autenticate passano un tetto piccolo — un client anonimo non
+// deve poter far bufferizzare megabyte al server.
+function readBody(req: IncomingMessage, max = 5_000_000): Promise<{ c?: string; a?: unknown[]; k?: string; v?: unknown; name?: string; code?: string } | null> {
   return new Promise((resolve) => {
     let data = '';
-    req.on('data', (d) => { data += d; if (data.length > 5_000_000) req.destroy(); });
+    req.on('data', (d) => { data += d; if (data.length > max) req.destroy(); });
     req.on('end', () => {
       try { resolve(JSON.parse(data || '{}')); } catch { resolve(null); }
     });
@@ -528,7 +547,11 @@ export function startRemoteServer(): void {
       // fuori è 403, così il telefono distingue "PC giusto, finestra chiusa"
       // da "host che non è MasterHype" (404/conn refused/captive portal).
       if (u.pathname === '/pair' && req.method === 'POST') {
-        void readBody(req).then((body) => {
+        void readBody(req, 4096).then((body) => {
+          // Client sparito (o corpo oltre il tetto → socket distrutto): niente
+          // pairing — si consumerebbe una consegna della finestra e resterebbe
+          // nel DB un device col token mai ricevuto da nessuno.
+          if (req.socket.destroyed) return;
           const name = typeof body?.name === 'string' ? body.name.slice(0, 60) : undefined;
           // `code` = codice monouso dal QR (?pair=): autorizza da solo, si
           // consuma all'uso. Senza code vale solo la finestra «Accoppia».

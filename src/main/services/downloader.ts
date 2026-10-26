@@ -7,13 +7,14 @@ import { tmpdir } from 'os';
 import type { TrackRef, DownloadJob, DownloadStatus } from '../../shared/types';
 import { getSettings } from '../settings';
 import { IPC } from '../../shared/types';
-import { addTrack, recordEvent, bumpTaste, findByVideoId, importLocalFile } from './library';
+import { addTrack, recordEvent, bumpTaste, findByVideoId, importLocalFile, localVideoId } from './library';
 import { lastfmArtistTags, audiusSearch, audiusStreamUrl } from './sources';
 import { audiusMatch } from '../../shared/ytparse';
 import { mapLimit } from './util';
 import { report, markBadStream, isBadStream } from './telemetry';
 import { searchSongs } from './ytmusic';
 import { getDb } from '../db';
+import { writeFileAtomic } from '../fsAtomic';
 
 type NotifyFn = (channel: string, payload: unknown) => void;
 let notify: NotifyFn = () => {};
@@ -54,6 +55,7 @@ export function ffprobePath(): string {
 }
 
 function sanitize(name: string): string {
+  // eslint-disable-next-line no-control-regex -- i caratteri di controllo sono proprio ciò che va tolto dai nomi file
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 120);
 }
 
@@ -82,7 +84,7 @@ function persistQueue(): void {
     const pending = [...jobs.values()]
       .filter((j) => !['done', 'error'].includes(j.status))
       .map((j) => ({ track: j.track, userId: j.userId ?? 1 }));
-    try { writeFileSync(queueFile(), JSON.stringify(pending)); } catch { /* disco pieno: la coda resta in memoria */ }
+    try { writeFileAtomic(queueFile(), JSON.stringify(pending)); } catch { /* disco pieno: la coda resta in memoria */ }
   }, 500);
 }
 export function restoreQueue(): number {
@@ -101,6 +103,21 @@ function emit(job: DownloadJob): void {
   notify(IPC.downloadEvent, { ...job });
   persistQueue();
   if (job.status === 'done') for (const fn of doneListeners) { try { fn({ ...job }); } catch { /* listener non deve rompere la coda */ } }
+  if (job.status === 'done' || job.status === 'error') pruneFinished();
+}
+
+// L'app vive nel tray per settimane: senza tetto i job finiti restavano in
+// memoria per sempre (e listJobs li rispediva tutti a ogni apertura della
+// schermata Download, anche al telefono). Si tengono gli ultimi N finiti —
+// la Map è in ordine di inserimento, i primi trovati sono i più vecchi.
+const MAX_FINISHED = 200;
+function pruneFinished(): void {
+  let finished = 0;
+  for (const j of jobs.values()) if (j.status === 'done' || j.status === 'error') finished++;
+  for (const [id, j] of jobs) {
+    if (finished <= MAX_FINISHED) break;
+    if (j.status === 'done' || j.status === 'error') { jobs.delete(id); finished--; }
+  }
 }
 
 export function listJobs(): DownloadJob[] {
@@ -343,7 +360,11 @@ function runYtDlp(url: string, dir: string, id: string, onPct: (p: number) => vo
       const m = /\[download\]\s+([\d.]+)%/.exec(String(d));
       if (m) onPct(Math.min(58, Math.round(parseFloat(m[1]) * 0.58)));
     });
-    proc.on('close', (code) => { clearTimeout(killer); code === 0 ? resolve() : reject(new Error(`yt-dlp exit ${code}: ${cleanErr(err).slice(0, 300)}`)); });
+    proc.on('close', (code) => {
+      clearTimeout(killer);
+      if (code === 0) resolve();
+      else reject(new Error(`yt-dlp exit ${code}: ${cleanErr(err).slice(0, 300)}`));
+    });
     proc.on('error', (e) => { clearTimeout(killer); reject(new Error(`yt-dlp non avviato: ${e.message}`)); });
   });
 }
@@ -391,6 +412,11 @@ export async function importFiles(paths: string[], u = 1): Promise<number> {
   await mapLimit(paths, 3, async (p) => {
     const ext = p.slice(p.lastIndexOf('.')).toLowerCase();
     if (!AUDIO_EXT.has(ext)) return;
+    // Già in libreria: conta come importato (l'utente lo ritrova) ma niente
+    // ffprobe, niente copia e niente evento 'download' ripetuto — ogni
+    // re-drop gonfiava il peso dell'artista nei gusti.
+    const known = findByVideoId(localVideoId(p));
+    if (known && existsSync(known.filePath)) { n++; return; }
     const meta = await probeAudio(p);
     const t = importLocalFile(p, lib, () => meta);
     if (t) { recordEvent(t.id, t.artist, 'download', undefined, u); n++; }

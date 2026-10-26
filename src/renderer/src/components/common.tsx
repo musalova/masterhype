@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { CheckCircle2, AlertTriangle, Info, X, TriangleAlert, ChevronLeft } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Info, TriangleAlert, ChevronLeft } from 'lucide-react';
 import { Component, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useApp } from '../store';
