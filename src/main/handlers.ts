@@ -12,7 +12,7 @@ import * as burner from './services/burner';
 import * as sources from './services/sources';
 import * as users from './services/users';
 import * as devices from './services/devices';
-import { suggest, assistant, stationTracks, stationContinue, radioForArtist, radioForGenre, autoPlaylist } from './services/recommend';
+import { suggest, assistant, stationTracks, stationContinue, radioForArtist, radioForGenre, autoPlaylist, rankSearchResults } from './services/recommend';
 import { getTrends } from './services/trends';
 import * as telemetry from './services/telemetry';
 import * as engine from './services/engine';
@@ -70,6 +70,10 @@ async function searchImpl(u: number, q: string, expand?: boolean) {
     const rank = new Map(boosts.map((id, i) => [id, i]));
     out.songs.sort((a, b) => (rank.get(a.videoId) ?? 99) - (rank.get(b.videoId) ?? 99));
   }
+  // Re-rank sui gusti del profilo (artisti amati su, dislikati giù, dedup
+  // delle varianti Song/Video/Remaster dello stesso brano). Girava già sui
+  // pick esatti della stessa query: qui si aggiunge il profilo completo.
+  try { out.songs = rankSearchResults(u, q, out.songs); } catch { /* mai peggiorare la ricerca */ }
   return out;
 }
 
@@ -209,7 +213,20 @@ export const handlers: Record<string, Handler> = {
   [IPC.search]: searchImpl,
   // Suggerimenti live mentre digiti (la risposta è un array di sezioni —
   // l'estrazione è in ytparse.searchSuggestions)
-  [IPC.searchSuggest]: (_u: number, q: string) => ytmusic.suggestions(String(q ?? '')),
+  [IPC.searchSuggest]: async (u: number, q: string) => {
+    const yt = await ytmusic.suggestions(String(q ?? '')).catch(() => [] as string[]);
+    const nq = telemetry.normKey(q);
+    if (!nq) return yt;
+    // Artisti del PROFILO che matchano il prefisso (o una parola dell'artista):
+    // i più amati prima — "vas" propone Vasco Rossi anche se YouTube non lo sa.
+    const seen = new Set(yt.map((s) => telemetry.normKey(s)));
+    const mine = library.tasteProfile(u, 'artist')
+      .filter((r) => r.weight > 0 && (r.value.startsWith(nq) || r.value.split(' ').some((w) => w.startsWith(nq))))
+      .sort((a, b) => b.weight - a.weight).slice(0, 3)
+      .map((r) => r.value.replace(/\b\p{L}/gu, (c) => c.toUpperCase()))
+      .filter((m) => !seen.has(telemetry.normKey(m)) && telemetry.normKey(m) !== nq);
+    return [...mine, ...yt].slice(0, 10);
+  },
   [IPC.streamUrl]: (_u: number, videoId: string) => downloader.streamUrl(videoId),
   [IPC.playStream]: (_u: number, videoId: string, artist: string, title: string) =>
     downloader.playStream(videoId, artist, title),

@@ -11,6 +11,48 @@ import { normText as norm, normTag, trackKey as key, trackBaseKey as baseKey } f
 import { parsePrompt } from './promptParse';
 export { parsePrompt };
 
+// ---- Ricerca ordinata sui gusti ----
+// I risultati di YouTube Music arrivano in ordine "globale". Ricalcoliamo:
+// boost per artisti/tag che il profilo ama, boost per brani già ascoltati/
+// scaricati/amati, penalità per artisti dislikati (MA NON se l'utente li
+// sta cercando per nome — un intent esplicito vince sempre) e dedup delle
+// varianti dello stesso brano (Song/Video/Topic/Remaster) tenendo la
+// versione con il punteggio migliore. Tutto per-utente.
+export function rankSearchResults(u: number, q: string, songs: TrackRef[]): TrackRef[] {
+  if (songs.length < 2) return songs;
+  const aw = new Map(tasteProfile(u, 'artist').map((r) => [r.value, r.weight]));
+  const tw = new Map(tasteProfile(u, 'tag').concat(tasteProfile(u, 'genre')).map((r) => [r.value, r.weight]));
+  const aff = trackAffinity(u);
+  const nq = norm(q);
+  const asks = (a: string) => {
+    const na = norm(a);
+    return !!na && (nq === na || nq.startsWith(na) || na.includes(nq) || nq.includes(na));
+  };
+  const score = (t: TrackRef, i: number): number => {
+    let s = -i * 0.6; // base: ordine di YouTube, legato debolmente
+    const aW = aw.get(norm(t.artist)) ?? 0;
+    if (aW > 0) s += Math.min(6, aW) * 2;           // artisti amati su
+    else if (aW < 0 && !asks(t.artist)) s += aW * 3; // disliked giù (se non li cerchi)
+    const k = baseKey(t.artist ?? '', t.title ?? '');
+    const a = aff.get(k) ?? 0;
+    if (a > 0) s += Math.min(4, a);                  // brano già amato su
+    else if (a < 0 && !nq.includes(norm(t.title))) s += a; // skip ripetuti giù (se non cerchi quel titolo)
+    // Match debole col genere/tag del profilo: spinge il risultato "vicino ai gusti"
+    const g = normTag(String(t.album ?? ''));
+    if (g && (tw.get(g) ?? 0) > 0) s += 1;
+    return s;
+  };
+  // dedup per chiave fuzzy: resta la versione col punteggio più alto
+  const best = new Map<string, { t: TrackRef; s: number }>();
+  songs.forEach((t, i) => {
+    const k = baseKey(t.artist ?? '', t.title ?? '') || `${i}`;
+    const s = score(t, i);
+    const cur = best.get(k);
+    if (!cur || s > cur.s) best.set(k, { t, s });
+  });
+  return [...best.values()].sort((x, y) => y.s - x.s).map((x) => x.t);
+}
+
 // Motore raccomandazione offline: aggrega candidati da più fonti e li pesa
 // contro il profilo gusti memorizzato (artisti/generi/tag).
 
