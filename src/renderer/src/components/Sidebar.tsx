@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Home, Radio, Search, Library, ListMusic, Disc3, Settings, Check, UserPlus, Heart, Sparkles } from 'lucide-react';
+import { Home, Radio, Search, Library, ListMusic, Disc3, Settings, Check, UserPlus, Heart, Sparkles, Compass, TrendingUp, Download, ChevronDown } from 'lucide-react';
 import { useApp, Screen } from '../store';
 import { api } from '../api';
 import { isStandalone } from '../remote';
@@ -20,6 +20,32 @@ const items: { id: Screen; label: string; icon: typeof Home }[] = [
 ];
 // Schermate secondarie: evidenziano la voce primaria a cui appartengono
 const PARENT: Partial<Record<Screen, Screen>> = { trends: 'search', downloads: 'library', assistant: 'cd', settings: 'home' };
+
+// Dashboard desktop: poche categorie espandibili, le funzioni come sottovoci.
+// kids vuoti = voce singola; un solo kid = voce piatta senza chevron.
+const GROUPS: { id: string; label: string; icon: typeof Home; kids: { id: Screen; label: string; icon: typeof Home }[] }[] = [
+  { id: 'home', label: 'Home', icon: Home, kids: [] },
+  { id: 'discover', label: 'Scopri', icon: Compass, kids: [
+    { id: 'search', label: 'Cerca', icon: Search },
+    { id: 'stations', label: 'Stazioni', icon: Radio },
+    { id: 'trends', label: 'Trend', icon: TrendingUp },
+  ] },
+  { id: 'collect', label: 'Raccolta', icon: Library, kids: [
+    { id: 'library', label: 'Libreria', icon: Library },
+    { id: 'playlists', label: 'Playlist', icon: ListMusic },
+    { id: 'downloads', label: 'Download', icon: Download },
+  ] },
+  { id: 'create', label: 'Crea', icon: Disc3, kids: [
+    { id: 'cd', label: 'CD', icon: Disc3 },
+    { id: 'assistant', label: 'Assistente', icon: Sparkles },
+  ] },
+];
+const GROUP_OF: Partial<Record<Screen, string>> = {
+  home: 'home', settings: 'home',
+  search: 'discover', stations: 'discover', trends: 'discover',
+  library: 'collect', playlists: 'collect', downloads: 'collect',
+  cd: 'create', assistant: 'create',
+};
 
 // Chip profilo in fondo alla sidebar (solo desktop: su mobile i profili
 // sono in Impostazioni → Profili). Click → switcher con tutti i profili.
@@ -133,6 +159,20 @@ export default function Sidebar() {
   const active = useApp((s) => s.downloads.filter((d) => !['done', 'error'].includes(d.status)).length);
   const navRef = useRef<HTMLElement>(null);
 
+  // Stato dei gruppi espansi (persistito; default = tutti aperti = dashboard)
+  const [open, setOpen] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem('mh-nav-groups') ?? '{}'); } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('mh-nav-groups', JSON.stringify(open)); } catch { /* */ }
+  }, [open]);
+  // Se si naviga dentro un gruppo compresso (es. tab Trend da Cerca) si riapre:
+  // la voce attiva non deve mai restare nascosta.
+  useEffect(() => {
+    const g = GROUP_OF[screen];
+    if (g && g !== 'home') setOpen((o) => (o[g] === false ? { ...o, [g]: true } : o));
+  }, [screen]);
+
   // Mobile: la barra scorre orizzontalmente — la voce attiva resta visibile
   useEffect(() => {
     navRef.current?.querySelector('[data-active="1"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
@@ -160,22 +200,79 @@ export default function Sidebar() {
         </div>
       </div>
       {/* 6 voci: su mobile stanno tutte in una riga, niente scroll nascosto */}
-      <nav ref={navRef} aria-label="Navigazione principale" className="flex-1 space-y-1 px-2 max-md:flex max-md:items-stretch max-md:space-y-0 max-md:px-0.5 max-md:py-1">
-        {/* Senza PC il masterizzatore non esiste: al posto di "CD" l'assistente
-            scalette (funziona anche sul telefono da solo) */}
-        {(isStandalone() ? items.map((i) => (i.id === 'cd' ? { id: 'assistant' as Screen, label: 'Assistente', icon: Sparkles } : i)) : items).map(({ id, label, icon: Icon }) => (
-          <button key={id} data-active={activeId === id ? 1 : 0} aria-current={activeId === id ? 'page' : undefined} onClick={() => nav(id)} className={itemCls(id)}>
-            <Icon size={18} className={activeId === id ? 'text-accent' : ''} />
-            <span className="flex-1 text-left max-md:flex-none max-md:text-center max-md:leading-none truncate max-md:max-w-full">{label}</span>
-            {id === 'cd' && cdCount > 0 && (
-              <span className="text-[10px] bg-accent text-white rounded-full px-1.5 py-0.5 font-bold max-md:absolute max-md:top-0.5 max-md:right-1/2 max-md:translate-x-4">{cdCount}</span>
-            )}
-            {id === 'library' && active > 0 && (
-              <span title={`${active} download in corso`}
-                className="text-[10px] bg-accent2 text-white rounded-full px-1.5 py-0.5 font-bold max-md:absolute max-md:top-0.5 max-md:right-1/2 max-md:translate-x-4">{active}</span>
-            )}
-          </button>
-        ))}
+      <nav ref={navRef} aria-label="Navigazione principale" className="flex-1 space-y-1 px-2 max-md:flex max-md:flex-col max-md:space-y-0 max-md:px-0 max-md:py-0">
+        {/* Mobile: barra piatta — 6 icone in una riga, niente gerarchia */}
+        <div className="md:hidden flex items-stretch flex-1 px-0.5 py-1">
+          {/* Senza PC il masterizzatore non esiste: al posto di "CD" l'assistente
+              scalette (funziona anche sul telefono da solo) */}
+          {(isStandalone() ? items.map((i) => (i.id === 'cd' ? { id: 'assistant' as Screen, label: 'Assistente', icon: Sparkles } : i)) : items).map(({ id, label, icon: Icon }) => (
+            <button key={id} data-active={activeId === id ? 1 : 0} aria-current={activeId === id ? 'page' : undefined} onClick={() => nav(id)} className={itemCls(id)}>
+              <Icon size={18} className={activeId === id ? 'text-accent' : ''} />
+              <span className="flex-1 text-left max-md:flex-none max-md:text-center max-md:leading-none truncate max-md:max-w-full">{label}</span>
+              {id === 'cd' && cdCount > 0 && (
+                <span className="text-[10px] bg-accent text-white rounded-full px-1.5 py-0.5 font-bold max-md:absolute max-md:top-0.5 max-md:right-1/2 max-md:translate-x-4">{cdCount}</span>
+              )}
+              {id === 'library' && active > 0 && (
+                <span title={`${active} download in corso`}
+                  className="text-[10px] bg-accent2 text-white rounded-full px-1.5 py-0.5 font-bold max-md:absolute max-md:top-0.5 max-md:right-1/2 max-md:translate-x-4">{active}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        {/* Desktop: dashboard a gruppi espandibili (stato in mh-nav-groups).
+            Senza PC il masterizzatore non esiste: "CD" sparisce dal gruppo Crea. */}
+        <div className="max-md:hidden space-y-1">
+          {GROUPS.map((g) => {
+            const kids = g.kids.filter((k) => !(isStandalone() && k.id === 'cd'));
+            if (!kids.length) return null;
+            const gActive = GROUP_OF[screen] === g.id;
+            const badge = g.id === 'create' ? cdCount : g.id === 'collect' ? active : 0;
+            if (kids.length === 1) { // voce singola/piatta: niente chevron
+              const k = kids[0];
+              const on = screen === k.id || (g.id === 'home' && (screen === 'home' || screen === 'settings'));
+              return (
+                <button key={g.id} data-active={on ? 1 : 0} aria-current={on ? 'page' : undefined} onClick={() => nav(k.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-colors ${on ? 'text-accent' : 'text-dim hover:text-txt hover:bg-panel2/60'}`}>
+                  <k.icon size={18} className={on ? 'text-accent' : ''} />
+                  <span className="flex-1 text-left truncate">{g.id === 'home' ? g.label : k.label}</span>
+                  {badge > 0 && <span className="text-[10px] bg-accent text-white rounded-full px-1.5 py-0.5 font-bold">{badge}</span>}
+                </button>
+              );
+            }
+            const isOpen = open[g.id] !== false; // dashboard: aperto di default, si comprime
+            return (
+              <div key={g.id}>
+                <div className={`group/nav w-full flex items-center rounded-xl text-[13px] font-medium transition-colors ${gActive ? 'text-accent' : 'text-dim hover:text-txt hover:bg-panel2/60'}`}>
+                  <button onClick={() => nav(kids[0].id)} className="flex-1 min-w-0 flex items-center gap-3 px-3 py-2.5 text-left">
+                    <g.icon size={18} className={gActive ? 'text-accent' : ''} />
+                    <span className="flex-1 text-left truncate">{g.label}</span>
+                    {!isOpen && badge > 0 && <span className="text-[10px] bg-accent text-white rounded-full px-1.5 py-0.5 font-bold">{badge}</span>}
+                  </button>
+                  <button onClick={() => setOpen((o) => ({ ...o, [g.id]: !isOpen }))} aria-label={isOpen ? `Comprimi ${g.label}` : `Espandi ${g.label}`} aria-expanded={isOpen}
+                    className="w-8 h-8 mr-1 flex items-center justify-center rounded-lg text-dim hover:text-txt hover:bg-panel transition-colors shrink-0">
+                    <ChevronDown size={14} className={`transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`} />
+                  </button>
+                </div>
+                {isOpen && (
+                  <div className="mt-0.5 ml-[22px] pl-3 border-l border-line space-y-0.5">
+                    {kids.map((k) => {
+                      const on = screen === k.id;
+                      const kb = k.id === 'cd' ? cdCount : k.id === 'downloads' ? active : 0;
+                      return (
+                        <button key={k.id} data-active={on ? 1 : 0} aria-current={on ? 'page' : undefined} onClick={() => nav(k.id)}
+                          className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[12.5px] transition-colors ${on ? 'text-accent bg-panel2/70' : 'text-dim hover:text-txt hover:bg-panel2/60'}`}>
+                          <k.icon size={14} />
+                          <span className="flex-1 text-left truncate">{k.label}</span>
+                          {kb > 0 && <span className="text-[10px] bg-accent2 text-white rounded-full px-1.5 py-0.5 font-bold">{kb}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </nav>
       <LibrarySection />
       <UserChip />
