@@ -1,4 +1,11 @@
 {
+  "0.5.10": [
+    "La ricerca ti conosce: i brani e gli artisti che ami salgono nei risultati, quelli che salti scendono",
+    "Niente più righe doppie: lo stesso brano in versione video, topic o remaster appare una sola volta",
+    "Sul telefono i tasti delle righe e delle stazioni si vedono sempre, non servono più tocchi alla cieca",
+    "I controlli del lettore a tutto schermo si riaccendono al tocco e spariscono più lentamente",
+    "Correzioni di sicurezza e stabilità"
+  ],
   "0.5.9": [
     "La riproduzione casuale è quella vera: senti ogni brano una sola volta prima di ricominciare, e \"indietro\" torna al brano che hai appena ascoltato",
     "Spostati nel brano anche dai controlli multimediali di Windows e del telefono",
