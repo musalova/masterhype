@@ -335,8 +335,10 @@ function runYtDlp(url: string, dir: string, id: string, onPct: (p: number) => vo
     // Timeout: un download stallato non deve tenere uno slot occupato per
     // sempre (2 slot paralleli → un hang bloccava metà della coda)
     const killer = setTimeout(() => { try { proc.kill(); } catch { /* */ } }, 15 * 60_000);
+    // stderr cresce per tutto il download (progress + warning): su un file da
+    // 15 min accumulava MB inutili. Teniamo la coda — cleanErr cerca gli ERROR.
     let err = '';
-    proc.stderr.on('data', (d) => { err += d; });
+    proc.stderr.on('data', (d) => { err = (err + String(d)).slice(-20_000); });
     proc.stdout.on('data', (d) => {
       const m = /\[download\]\s+([\d.]+)%/.exec(String(d));
       if (m) onPct(Math.min(58, Math.round(parseFloat(m[1]) * 0.58)));

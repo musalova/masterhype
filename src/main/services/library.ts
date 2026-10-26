@@ -154,8 +154,14 @@ export function importLocalFile(
   const videoId = 'local:' + createHash('sha1').update(srcPath.toLowerCase()).digest('hex').slice(0, 12);
   mkdirSync(libraryDir, { recursive: true });
   const sanitize = (s: string) => s.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 120);
-  let outPath = srcPath.startsWith(libraryDir) ? srcPath : join(libraryDir, `${sanitize(`${artist} - ${title}`)}${extname(srcPath)}`);
-  if (!srcPath.startsWith(libraryDir)) {
+  // "Dentro la libreria" vuol dire directory = libraryDir, non semplice
+  // prefisso di stringa: 'C:\Music\MasterHypeExtra\x.mp3' inizia con
+  // 'C:\Music\MasterHype' ma NON ci sta dentro (col prefisso nudo il file
+  // veniva registrato senza copia, puntando fuori dalla libreria).
+  const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const inLibrary = norm(srcPath).startsWith(norm(libraryDir) + '/');
+  let outPath = inLibrary ? srcPath : join(libraryDir, `${sanitize(`${artist} - ${title}`)}${extname(srcPath)}`);
+  if (!inLibrary) {
     let n = 1;
     while (existsSync(outPath)) {
       const p = join(libraryDir, `${sanitize(`${artist} - ${title}`)} (${++n})${extname(srcPath)}`);

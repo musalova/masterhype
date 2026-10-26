@@ -493,6 +493,12 @@ export function startRemoteServer(): void {
       // niente Referer — la URL del documento può contenere il token di
       // pairing e comunque YouTube non deve sapere quale PC serve la UI.
       res.setHeader('Referrer-Policy', 'no-referrer');
+      // Anti MIME-sniffing su media/upload e anti-clickjacking: la UI servita
+      // al telefono (schermate di pairing!) non deve poter essere ingabbiata
+      // in un iframe esterno. SAMEORIGIN lascia funzionare po.html (stesso
+      // origin) e l'embedding nella WebView dell'app.
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN');
       if (req.method === 'OPTIONS') {
         res.writeHead(204, {
           'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',

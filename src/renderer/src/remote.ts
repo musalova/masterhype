@@ -778,6 +778,10 @@ async function probeRemoteHealth(): Promise<void> {
       conf = { ...conf, base: addr, alts };
       try { localStorage.setItem(CONF_KEY, JSON.stringify(conf)); } catch { /* */ }
       if (es) { es.close(); es = null; } // es poteva restare CONNECTING sul base morto
+      // Il service worker proxyizza /__pc/* verso conf.base: senza questo
+      // ri-annuncio continuerebbe a puntare all'indirizzo MORTO dopo il
+      // failover (media e SSE via SW rotti fino al prossimo pairing).
+      swAnnounce();
     }
     setOnline(true);
     learnAlts(info.alts);

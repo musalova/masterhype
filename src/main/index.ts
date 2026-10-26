@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, shell, dialog, globalShortcut, net, Tray, Menu, nativeImage, ipcMain, powerMonitor } from 'electron';
+import { app, BrowserWindow, protocol, shell, dialog, globalShortcut, net, Tray, Menu, nativeImage, ipcMain, powerMonitor, session } from 'electron';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 import { initDb } from './db';
@@ -87,8 +87,19 @@ function createWindow(): void {
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    void shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // La finestra deve navigare SOLO sulla nostra UI (file:// in produzione,
+  // dev-server in sviluppo): un link/redirect qualunque nel renderer non
+  // deve poter caricare contenuto remoto nel contesto privilegiato (preload
+  // con API IPC). Gli esterni li apre il browser di sistema.
+  win.webContents.on('will-navigate', (e, url) => {
+    const dev = process.env.ELECTRON_RENDERER_URL;
+    if (url.startsWith('file://') || (dev && url.startsWith(dev))) return;
+    e.preventDefault();
+    void shell.openExternal(url);
   });
 
   // La X non esce: riduce in tray. Il server remoto resta vivo — il telefono
@@ -137,6 +148,10 @@ app.whenReady().then(() => {
   app.setAppUserModelId('com.masterhype.app'); // notifiche Windows con nome corretto
   initDb();
   initSettings();
+  // Il renderer desktop non richiede permessi web (camera/mic/notifiche/geo/
+  // USB): il gate di pairing con scanner QR gira solo sul telefono. Negare
+  // tutto — superficie in meno se mai caricasse contenuto non previsto.
+  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
   setNotifier(send);
   setBurnNotifier(send);
   setHandlersNotifier(send); // broadcast prefs → PC + telefoni vedono i cambi live

@@ -802,3 +802,27 @@
 - Altezza navigazione mobile condivisa: `--mobile-nav-height` include `safe-area-inset-bottom`; player e notifiche devono rispettarla. Le transizioni Framer usano `MotionConfig` con preferenza utente/sistema, oltre alla regola CSS per movimento ridotto.
 - `npm run build:android -- --local` verifica una build firmata senza bump versione e senza copiare APK/feed nella cartella dell’app installata: output separati `release/design-preview/` e `build/apk-preview/` (ignorati da Git). Sono build di verifica, non una nuova release; non attivano aggiornamenti automatici. Il percorso di release normale resta invariato.
 - Installer di anteprima: usare l’API `electron-builder.build` con `publish: 'never'`, output `release/design-preview` e hook `beforePack` che cambia SOLO `extraResources.find(r => r.to === 'apk').from` in `build/apk-preview`. Passare un nuovo array `extraResources` nell’override lo concatena al file YAML: doppie copie concorrenti dei binari causano `EBUSY`. L’override CLI `.extraResources.2.from` invece non supera la validazione dello schema.
+
+## Hardening pass (ottobre 2026) — vincoli da non regredire
+
+- **webPreferences**: `will-navigate` in index.ts blocca la navigazione
+  interna verso URL esterni (li apre nel browser di sistema) — il renderer
+  resta solo su file:///dev-server. `setPermissionRequestHandler` nega
+  TUTTE le permission web sul desktop (il QR scanner vive solo sul telefono).
+- **Header server remoto**: `X-Content-Type-Options: nosniff` +
+  `X-Frame-Options: SAMEORIGIN` su ogni risposta (anti MIME-sniffing e
+  anti-clickjacking — la pagina di pairing non deve essere ingabbiabile).
+- **CSP index.html**: include `object-src 'none'; base-uri 'self';
+  form-action 'none'; frame-ancestors 'self'` — po.html resta same-origin.
+- **Failover SW proxy**: dopo un cambio di `conf.base` in probeRemoteHealth
+  chiamare SEMPRE `swAnnounce()` — senza, /__pc/* resta puntato al base
+  morto (media rotti fino al re-pairing).
+- **importLocalFile**: "dentro la libreria" = confronto di directory
+  normalizzata con separatore, MAI startsWith nudo (falso positivo su
+  directory sorelle "MasterHypeExtra").
+- **package.json**: solo `electron-updater` + `youtubei.js` in
+  `dependencies` (importati dal main, externalizzati da electron-vite);
+  tutte le dep del renderer sono `devDependencies` (bundled da vite) —
+  un dep spostato in `dependencies` gonfia l'asar senza motivo.
+- Root repo: screenshot in `docs/screenshots/`, LICENSE MIT presente,
+  `engines.node >= 22.5` (node:sqlite).
