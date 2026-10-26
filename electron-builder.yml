@@ -35,6 +35,13 @@ win:
   target:
     - nsis
   artifactName: MasterHype-Setup-${version}.${ext}
+  # Firma Authenticode dell'installer/EXE interni. Cert self-signed
+  # "CN=MasterHype" in Cert:\CurrentUser\My (EKU code-signing, scade 2031):
+  # dà nome publisher + timestamp + integrità — NON rimuove SmartScreen
+  # (servirebbe un cert CA o Azure Trusted Signing). electron-builder >=26.18
+  # salta la firma senza config esplicita: questa sezione è obbligatoria.
+  signtoolOptions:
+    certificateSubjectName: MasterHype
 nsis:
   oneClick: false
   # L'app è tray-resident: include lo script che termina MasterHype.exe
