@@ -5,9 +5,12 @@
 - Repo pubblico `github.com/musalova/masterhype`, branch `main`, remote `origin`
   già configurato. Commit con identità `-c user.name=musalova
   -c user.email=musalova@users.noreply.github.com` (nessun user.name globale
-  configurato sulla macchina). Push: PAT in env `GH_TOKEN` (scope
-  `public_repo` — NON può pushare file sotto `.github/workflows/`: serve lo
-  scope `workflow` oppure crearli dalla UI web GitHub).
+  configurato sulla macchina). Push: `git push origin main` usa Git Credential
+  Manager (login OAuth di `musalova`, scope `gist, repo, workflow` → può
+  pushare anche `.github/workflows/`). git NON legge `GH_TOKEN`: quella PAT
+  (scope `public_repo`) serve solo alle API GitHub di `release.mjs`.
+  Verifica scope senza stampare il token: `git credential fill` → header
+  `X-OAuth-Scopes` di `api.github.com/user`.
 - NON in git (vedi `.gitignore`): `resources/bin/*.exe` (yt-dlp/ffmpeg/
   ffprobe/BurnHelper — ffmpeg+ffprobe >100MB file, oltre il limite GitHub;
   fonti in README), `android/keystore.properties` + `android/keystore/`
