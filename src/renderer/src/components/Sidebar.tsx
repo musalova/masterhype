@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Home, Radio, Search, Library, ListMusic, Disc3, Settings, Check, UserPlus, Heart, Sparkles, Compass, TrendingUp, Download, ChevronDown } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Home, Radio, Search, Library, ListMusic, Disc3, Settings, Check, UserPlus, Heart, Sparkles, Compass, TrendingUp, Download, ChevronDown, Menu, X, ChevronRight } from 'lucide-react';
 import { useApp, Screen } from '../store';
 import { api } from '../api';
 import { isStandalone } from '../remote';
@@ -15,8 +16,17 @@ const items: { id: Screen; label: string; icon: typeof Home }[] = [
   { id: 'search', label: 'Cerca', icon: Search },
   { id: 'stations', label: 'Stazioni', icon: Radio },
   { id: 'library', label: 'Libreria', icon: Library },
-  { id: 'playlists', label: 'Playlist', icon: ListMusic },
-  { id: 'cd', label: 'CD', icon: Disc3 },
+];
+// Schermate raggiungibili dal foglio "Altro" su mobile: quando si è dentro una
+// di queste è il pulsante Altro a restare acceso, non una voce a caso.
+const MORE_SCREENS: Screen[] = ['playlists', 'downloads', 'trends', 'cd', 'assistant', 'settings'];
+// Stesse sezioni della dashboard desktop: la struttura mentale non cambia
+// tra i due form factor. CD si nasconde in modalità senza PC.
+const MORE_SECTIONS: { title: string; rows: { id: Screen; label: string; icon: typeof Home }[] }[] = [
+  { title: 'Scopri', rows: [{ id: 'trends', label: 'Trend', icon: TrendingUp }] },
+  { title: 'Raccolta', rows: [{ id: 'playlists', label: 'Playlist', icon: ListMusic }, { id: 'downloads', label: 'Download', icon: Download }] },
+  { title: 'Crea', rows: [{ id: 'cd', label: 'CD', icon: Disc3 }, { id: 'assistant', label: 'Assistente', icon: Sparkles }] },
+  { title: 'Generale', rows: [{ id: 'settings', label: 'Impostazioni', icon: Settings }] },
 ];
 // Schermate secondarie: evidenziano la voce primaria a cui appartengono
 const PARENT: Partial<Record<Screen, Screen>> = { trends: 'search', downloads: 'library', assistant: 'cd', settings: 'home' };
@@ -157,7 +167,14 @@ export default function Sidebar() {
   const nav = useApp((s) => s.nav);
   const cdCount = useApp((s) => s.cdQueue.length);
   const active = useApp((s) => s.downloads.filter((d) => !['done', 'error'].includes(d.status)).length);
+  const users = useApp((s) => s.users);
+  const currentUser = useApp((s) => s.currentUser);
   const navRef = useRef<HTMLElement>(null);
+  // Su mobile: dentro una schermata "Altro" si illumina il pulsante Altro
+  const moreActive = MORE_SCREENS.includes(screen);
+  // Foglio "Altro" mobile: tutte le funzioni secondarie in sezioni
+  const [sheet, setSheet] = useState(false);
+  const go = (s: Screen) => { setSheet(false); nav(s); };
 
   // Stato dei gruppi espansi (persistito; default = tutti aperti = dashboard)
   const [open, setOpen] = useState<Record<string, boolean>>(() => {
@@ -201,24 +218,86 @@ export default function Sidebar() {
       </div>
       {/* 6 voci: su mobile stanno tutte in una riga, niente scroll nascosto */}
       <nav ref={navRef} aria-label="Navigazione principale" className="flex-1 space-y-1 px-2 max-md:flex max-md:flex-col max-md:space-y-0 max-md:px-0 max-md:py-0">
-        {/* Mobile: barra piatta — 6 icone in una riga, niente gerarchia */}
+        {/* Mobile: 4 destinazioni principali + "Altro" (foglio con le sezioni).
+            Prima erano 6 icone piatte e Trend/Download/Assistente/Impostazioni
+            non avevano nessuna voce di navigazione. */}
         <div className="md:hidden flex items-stretch flex-1 px-0.5 py-1">
-          {/* Senza PC il masterizzatore non esiste: al posto di "CD" l'assistente
-              scalette (funziona anche sul telefono da solo) */}
-          {(isStandalone() ? items.map((i) => (i.id === 'cd' ? { id: 'assistant' as Screen, label: 'Assistente', icon: Sparkles } : i)) : items).map(({ id, label, icon: Icon }) => (
-            <button key={id} data-active={activeId === id ? 1 : 0} aria-current={activeId === id ? 'page' : undefined} onClick={() => nav(id)} className={itemCls(id)}>
-              <Icon size={18} className={activeId === id ? 'text-accent' : ''} />
-              <span className="flex-1 text-left max-md:flex-none max-md:text-center max-md:leading-none truncate max-md:max-w-full">{label}</span>
-              {id === 'cd' && cdCount > 0 && (
-                <span className="text-[10px] bg-accent text-white rounded-full px-1.5 py-0.5 font-bold max-md:absolute max-md:top-0.5 max-md:right-1/2 max-md:translate-x-4">{cdCount}</span>
-              )}
-              {id === 'library' && active > 0 && (
-                <span title={`${active} download in corso`}
-                  className="text-[10px] bg-accent2 text-white rounded-full px-1.5 py-0.5 font-bold max-md:absolute max-md:top-0.5 max-md:right-1/2 max-md:translate-x-4">{active}</span>
-              )}
-            </button>
-          ))}
+          {items.map(({ id, label, icon: Icon }) => {
+            const on = !moreActive && activeId === id;
+            return (
+              <button key={id} data-active={on ? 1 : 0} aria-current={on ? 'page' : undefined} onClick={() => nav(id)} className={itemCls(id)}>
+                <Icon size={18} className={on ? 'text-accent' : ''} />
+                <span className="flex-1 text-left max-md:flex-none max-md:text-center max-md:leading-none truncate max-md:max-w-full">{label}</span>
+                {id === 'library' && active > 0 && (
+                  <span title={`${active} download in corso`}
+                    className="text-[10px] bg-accent2 text-white rounded-full px-1.5 py-0.5 font-bold max-md:absolute max-md:top-0.5 max-md:right-1/2 max-md:translate-x-4">{active}</span>
+                )}
+              </button>
+            );
+          })}
+          <button data-active={moreActive || sheet ? 1 : 0} aria-current={moreActive ? 'page' : undefined} aria-label="Altro — tutte le funzioni"
+            onClick={() => setSheet((v) => !v)} className={itemCls('cd')}>
+            <Menu size={18} className={moreActive ? 'text-accent' : ''} />
+            <span className="flex-1 text-left max-md:flex-none max-md:text-center max-md:leading-none truncate max-md:max-w-full">Altro</span>
+            {(cdCount > 0 || active > 0) && (
+              <span className="text-[10px] bg-accent text-white rounded-full px-1.5 py-0.5 font-bold max-md:absolute max-md:top-0.5 max-md:right-1/2 max-md:translate-x-4">{cdCount + active}</span>
+            )}
+          </button>
         </div>
+        {/* Foglio "Altro" mobile: sezioni ordinate = stessa dashboard del desktop.
+            Chiusura su backdrop, sul tasto X o quando si sceglie una voce. */}
+        <AnimatePresence>
+          {sheet && (
+            <>
+              <motion.div key="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                onClick={() => setSheet(false)} className="fixed inset-0 z-40 bg-black/60 md:hidden" />
+              <motion.div key="moresheet" role="dialog" aria-modal="true" aria-label="Altre funzioni"
+                initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 32, stiffness: 320 }}
+                className="fixed inset-x-0 bottom-0 z-50 md:hidden bg-panel border-t border-line rounded-t-3xl max-h-[76dvh] overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+12px)]">
+                <div className="w-10 h-1 rounded-full bg-line/60 mx-auto mt-2.5" />
+                <div className="px-5 pt-2.5 pb-1 flex items-center justify-between">
+                  <span className="font-semibold text-[15px]">Altro</span>
+                  <button onClick={() => setSheet(false)} aria-label="Chiudi" className="w-9 h-9 flex items-center justify-center rounded-xl text-dim hover:text-txt hover:bg-panel2 transition-colors"><X size={18} /></button>
+                </div>
+                <button onClick={() => go('settings')}
+                  className="mx-4 mb-2 w-[calc(100%-2rem)] flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-panel2/60 border border-line text-left">
+                  <span className="w-9 h-9 rounded-full bg-gradient-to-br from-fuchsia-600 to-violet-500 flex items-center justify-center text-sm font-bold text-white shrink-0">
+                    {(users.find((x) => x.id === currentUser)?.name ?? users[0]?.name ?? '?')[0].toUpperCase()}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium truncate">{users.find((x) => x.id === currentUser)?.name ?? 'Profilo'}</span>
+                    <span className="block text-[11px] text-dim">Profili e impostazioni</span>
+                  </span>
+                  <ChevronRight size={16} className="text-dim shrink-0" />
+                </button>
+                {MORE_SECTIONS.map((sec) => {
+                  const rows = sec.rows.filter((r) => !(isStandalone() && r.id === 'cd'));
+                  if (!rows.length) return null;
+                  return (
+                    <div key={sec.title} className="px-4 pt-3">
+                      <div className="px-3 pb-1.5 text-[10px] font-bold text-dim uppercase tracking-wider">{sec.title}</div>
+                      {rows.map((r) => {
+                        const on = screen === r.id;
+                        const b = r.id === 'cd' ? cdCount : r.id === 'downloads' ? active : 0;
+                        return (
+                          <button key={r.id} onClick={() => go(r.id)} aria-current={on ? 'page' : undefined}
+                            className={`w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl text-left transition-colors ${on ? 'text-accent bg-panel2/80' : 'text-txt hover:bg-panel2/60'}`}>
+                            <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${on ? 'bg-accent/20 text-accent' : 'bg-panel2 text-dim'}`}>
+                              <r.icon size={17} />
+                            </span>
+                            <span className="flex-1 min-w-0 text-[14px] font-medium truncate">{r.label}</span>
+                            {b > 0 && <span className="text-[10px] bg-accent text-white rounded-full px-1.5 py-0.5 font-bold">{b}</span>}
+                            <ChevronRight size={15} className="text-dim/60 shrink-0" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
         {/* Desktop: dashboard a gruppi espandibili (stato in mh-nav-groups).
             Senza PC il masterizzatore non esiste: "CD" sparisce dal gruppo Crea. */}
         <div className="max-md:hidden space-y-1">
