@@ -343,8 +343,10 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   color: #fff; box-shadow: 0 8px 26px -8px color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
 .btn-hero-play:hover { transform: scale(1.04); filter: brightness(1.1); }
-.btn-hero-ghost { background: rgba(109,109,110,.35); color: #fff; backdrop-filter: blur(8px); }
-.btn-hero-ghost:hover { background: rgba(109,109,110,.5); }
+/* Ghost sull'hero: vetro chiaro leggibile — prima era un grigio fangoso
+   (rgba(109,109,110,.35)) quasi invisibile sulle copertine scure */
+.btn-hero-ghost { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.24); color: #fff; backdrop-filter: blur(10px); }
+.btn-hero-ghost:hover { background: rgba(255,255,255,.24); }
 .rank-badge {
   font-weight: 900; font-style: italic; color: var(--color-accent);
   text-shadow: 0 2px 12px rgba(0,0,0,.8);
@@ -382,7 +384,7 @@ select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px sol
 .home-tools { display: flex; align-items: center; gap: 8px; }
 .home-tool { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--color-line); background: var(--color-panel); color: var(--color-dim); transition: color .18s, border-color .18s; }
 .home-tool:hover { color: var(--color-txt); border-color: var(--color-accent); }
-.quick-tile { border: 1px solid color-mix(in srgb, var(--color-line) 75%, transparent); background: color-mix(in srgb, var(--color-panel2) 45%, transparent); border-radius: 14px; padding: 7px; gap: 12px; box-shadow: none; }
+.quick-tile { border: 1px solid color-mix(in srgb, var(--color-line) 75%, transparent); background: color-mix(in srgb, var(--color-panel2) 72%, transparent); border-radius: 14px; padding: 7px; gap: 12px; box-shadow: none; }
 .quick-tile:hover { border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-line)); background: var(--color-panel2); }
 .quick-tile > div:first-child { border-radius: 9px; width: 42px; height: 42px; }
 .section-title { margin-bottom: 18px; }
