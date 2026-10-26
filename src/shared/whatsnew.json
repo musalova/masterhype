@@ -1,4 +1,10 @@
 {
+  "0.5.11": [
+    "Menu riorganizzato: sul PC poche categorie espandibili (Scopri, Raccolta, Crea) con tutte le funzioni dentro",
+    "Sul telefono il pulsante Altro apre tutte le funzioni: Trend, Download, Assistente, Impostazioni e profili finalmente raggiungibili",
+    "Pulsanti e riquadri più leggibili sulle copertine scure",
+    "Correzioni di sicurezza e stabilità"
+  ],
   "0.5.10": [
     "La ricerca ti conosce: i brani e gli artisti che ami salgono nei risultati, quelli che salti scendono",
     "Niente più righe doppie: lo stesso brano in versione video, topic o remaster appare una sola volta",
