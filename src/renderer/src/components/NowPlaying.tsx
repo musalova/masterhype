@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { motion } from 'framer-motion';
-import { X, Disc3, VideoOff, Radio, Trash2, Shuffle, Repeat, Repeat1, Moon, Maximize2, Minimize2, PictureInPicture2, Clapperboard, PanelRightOpen } from 'lucide-react';
-import { usePersistedState } from '../persist';
+import { X, Disc3, VideoOff, Radio, Trash2, Shuffle, Repeat, Repeat1, Moon, Maximize2, Minimize2, PictureInPicture2, Clapperboard, PanelRightOpen, Volume2, VolumeX } from 'lucide-react';
+import { usePersistedState, useDeviceState } from '../persist';
+import { MUTED_KEY } from '../storePersist';
 import { api } from '../api';
 import { pushBack } from '../backStack';
 import { useApp } from '../store';
@@ -178,6 +179,12 @@ export default function NowPlaying({ cur, time, dur, playing, onClose, onSeek }:
   const shuffle = useApp((s) => s.player.shuffle);
   const repeat = useApp((s) => s.player.repeat);
   const radio = useApp((s) => s.player.radio);
+  const volume = useApp((s) => s.player.volume);
+  const setVolume = useApp((s) => s.setVolume);
+  // Muto del dispositivo: stessa chiave mh-device-* del PlayerBar (allineate
+  // via mh-pref-live). Su mobile questo e il tasto in barra sono gli UNICI
+  // controlli audio: se il telefono "suona ma non si sente" si sblocca qui.
+  const [muted, setMuted] = useDeviceState(MUTED_KEY, false);
   const toggleShuffle = useApp((s) => s.toggleShuffle);
   const cycleRepeat = useApp((s) => s.cycleRepeat);
   const toggleRadio = useApp((s) => s.toggleRadio);
@@ -343,6 +350,20 @@ export default function NowPlaying({ cur, time, dur, playing, onClose, onSeek }:
             className={repeat !== 'off' ? 'text-accent' : 'text-white/60'}>{repeat === 'one' ? <Repeat1 size={16} /> : <Repeat size={16} />}</button>
           <button onClick={toggleRadio} title="Radio infinita" className={radio ? 'text-accent' : 'text-white/60'}><Radio size={16} /></button>
           <MobileSleep />
+        </div>
+        {/* Volume su mobile: la barra non ha lo slider (desktop sì) — qui è
+            l'unico cursore raggiungibile dal telefono. w-full + header wrap:
+            finisce su una riga sua sotto i toggle. */}
+        <div className="flex items-center gap-2.5 md:hidden w-full max-w-[300px] pr-1">
+          <button onClick={() => setMuted(!muted)} aria-label={muted ? 'Riattiva audio' : 'Disattiva audio'}
+            title={muted ? 'Riattiva audio' : 'Disattiva audio'} className={muted ? 'text-accent' : 'text-white/60'}>
+            {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
+          </button>
+          <input type="range" min={0} max={1} step={0.05} value={muted ? 0 : volume}
+            aria-label="Volume" title="Volume"
+            style={{ '--range-pct': `${(muted ? 0 : volume) * 100}%` } as CSSProperties}
+            onChange={(e) => { setMuted(false); setVolume(+e.target.value); }}
+            className="flex-1 h-1 accent-[--color-accent] cursor-pointer" />
         </div>
         <div className="flex items-center gap-1.5 shrink-0 max-md:ml-auto">
           <button onClick={() => setMode(cinema ? 'split' : 'cinema')} title={cinema ? 'Mostra testo e coda (C)' : 'Modalità cinema: solo video (C)'} className={iconBtn}>

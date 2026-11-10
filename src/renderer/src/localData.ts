@@ -237,10 +237,12 @@ export function localStats(base?: AppStats | null): AppStats {
 }
 
 // ---- Backup del dispositivo (modalità senza PC / trasloco su un telefono nuovo) ----
-// Tutto lo stato locale mh-* tranne il pairing (token del PC) e le cache
-// rigenerabili pesanti. I brani scaricati (IndexedDB) non entrano: pesano GB —
+// Tutto lo stato locale mh-* tranne il pairing (token del PC), le cache
+// rigenerabili pesanti e lo stato per-dispositivo (mh-device-*: volume e muto
+// sono dell'apparecchio — importarli porterebbe un muto su un telefono nuovo).
+// I brani scaricati (IndexedDB) non entrano: pesano GB —
 // l'indice sì, e le righe senza file vengono ripulite al primo reconcile.
-const SKIP_KEYS = /^(mh-remote-conf|mh-was-online|mh-update-|mh-home-cache|mh-trends-cache|mh-auto-cache)/;
+const SKIP_KEYS = /^(mh-remote-conf|mh-was-online|mh-update-|mh-home-cache|mh-trends-cache|mh-auto-cache|mh-device-)/;
 export interface DeviceBackup { app: 'masterhype-device'; version: 1; exportedAt: number; user: number; keys: Record<string, string> }
 export function exportDeviceBackup(): DeviceBackup {
   const keys: Record<string, string> = {};

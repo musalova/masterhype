@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { TrackRef, LibraryTrack, DownloadJob, BurnProgress, Settings, SuggestedTrack, RemoteLike, MhUser } from '../../shared/types';
 import { api, isRemote, mediaUrl } from './api';
 import { isOnline, myUserId, setLocalUserId, resyncWhen, isStandalone, remoteBase, remoteToken, claimProfile, watchClaimWindow, markPcFresh } from './remote';
-import { savePref, migratePrefs, clearLocalPrefs, pushDirty, archiveDirtyValues } from './persist';
+import { savePref, saveDevice, migratePrefs, clearLocalPrefs, pushDirty, archiveDirtyValues } from './persist';
 import { audioDuration, fetchTrackBlob } from './trackFetch';
 import {
   CD_KEY, VOL_KEY, persistCd, savedVolume, XF_KEY, savedXf,
@@ -17,9 +17,11 @@ import { phoneReconcile, phoneIndex, phoneIndexPut, phoneIndexDel, phonePut, pho
 import { trackKey } from '../../shared/taste';
 import { nextShuffleIndex, shuffleKey } from './shuffle';
 
-// Chiavi legacy → mh-pref-*: entrano nello store condiviso PC↔telefono
+// Chiavi legacy → mh-pref-*: entrano nello store condiviso PC↔telefono.
+// ECCEZIONE 'mh-volume': va alla chiave di dispositivo — volume/muto non si
+// condividono più (un muto dal PC mutava anche il telefono, irrecuperabile).
 migratePrefs({
-  'mh-volume': 'mh-pref-volume',
+  'mh-volume': 'mh-device-volume',
   'mh-playerprefs': 'mh-pref-player',
   'mh-crossfade': 'mh-pref-crossfade',
   'mh-cdqueue': 'mh-pref-cdqueue',
@@ -426,7 +428,7 @@ export const useApp = create<AppState>((set, get) => ({
     if (p.queueIndex > 0) get().play(p.queue[p.queueIndex - 1], p.queue, p.queueIndex - 1);
   },
   setVolume: (v) => {
-    savePref(VOL_KEY, v);
+    saveDevice(VOL_KEY, v);
     set((s) => ({ player: { ...s.player, volume: v } }));
   },
   toggleShuffle: () => set((s) => {
@@ -1072,8 +1074,9 @@ useApp.subscribe((s, prev) => {
   }, 800);
 });
 
-// Cambi live dall'altro dispositivo (broadcast prefs del DB condiviso):
-// applica solo allo stato — niente savePref, il valore è già sul server.
+// Cambi live: broadcast prefs dal DB condiviso (altro dispositivo) e scritture
+// locali, comprese le chiavi mh-device-* (volume: slider in NowPlaying → qui si
+// rilegge e riapplica). Applica solo allo stato — il valore è già persistito.
 window.addEventListener('mh-pref-live', (e) => {
   const key = (e as CustomEvent<string>).detail;
   const s = useApp.getState();

@@ -34,9 +34,28 @@ export const loadPendingCdSet = (): PendingCdSet => {
   return s;
 };
 
-export const VOL_KEY = 'mh-pref-volume';
+// Volume e muto sono del DISPOSITIVO (chiavi 'mh-device-*', mai nel bucket
+// mh-pref-* condiviso): un "0" o un muto scritto dal PC rendeva il telefono
+// silenzioso senza alcun controllo visibile per rimediare — il bug "riproduce
+// ma non si sente". Mai rimetterle sotto mh-pref-*.
+export const VOL_KEY = 'mh-device-volume';
+export const MUTED_KEY = 'mh-device-muted';
 export const persistCd = (q: LibraryTrack[]) => savePref(CD_KEY, q.map((t) => t.id));
-export const savedVolume = () => loadPref<number>(VOL_KEY, 0.8);
+// Il livello scelto SU QUESTO dispositivo vale sempre (anche 0). A chiave
+// assente si semina da ciò che il dispositivo conosceva — la vecchia chiave
+// condivisa, poi il legacy — ma uno 0 ereditato non è una scelta del
+// telefono: era la trappola che lo mutava. Meglio il default. Clamp [0,1] e
+// NaN→default: un valore corrotto non deve arrivare ad a.volume (lancia).
+export const savedVolume = () => {
+  const d = Number(loadPref<unknown>(VOL_KEY, NaN));
+  if (Number.isFinite(d)) return Math.min(1, Math.max(0, d));
+  const s = Number(loadPref<unknown>('mh-pref-volume', loadPref<unknown>('mh-volume', 0.8)));
+  return Number.isFinite(s) && s > 0 ? Math.min(1, s) : 0.8;
+};
+// Il muto NON si semina dalla vecchia chiave condivisa: chi era rimasto
+// silenziato da un mh-pref-muted=true arrivato dal PC torna a sentire dopo
+// l'update. Vero solo se l'utente l'ha premuto SU QUESTO dispositivo.
+export const savedMuted = () => loadPref<boolean>(MUTED_KEY, false) === true;
 export const XF_KEY = 'mh-pref-crossfade';
 // Tollera i formati storici: '0' grezzo (legacy), '"0"', false, 0
 export const savedXf = () => { const v = loadPref<unknown>(XF_KEY, true); return v !== false && v !== 0 && v !== '0'; };

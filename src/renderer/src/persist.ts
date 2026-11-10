@@ -7,8 +7,11 @@ import { onReconnected, myUserId } from './remote';
 // condiviso — desktop via IPC, telefono via HTTP. All'avvio e a ogni
 // riconnessione syncPrefs riporta le mh-pref-* dal DB nel localStorage.
 //
-// Condivise: volume, shuffle/repeat, crossfade, schermata, ordinamenti,
+// Condivise: shuffle/repeat, crossfade, schermata, ordinamenti,
 // code (player e CD Builder), opzioni assistente/CD…  — chiavi 'mh-pref-*'.
+// NON condivise: volume e muto sono del DISPOSITIVO che suona (chiavi
+// 'mh-device-*', vedi saveDevice in fondo) — uno "0" o un muto scritto dal
+// PC lasciava il telefono silenzioso senza alcun controllo per rimediare.
 
 export function loadPref<T>(key: string, fallback: T): T {
   try {
@@ -195,6 +198,41 @@ export function usePersistedState<T>(key: string, initial: T): [T, (v: T | ((p: 
     setV((p) => {
       const x = typeof nv === 'function' ? (nv as (p: T) => T)(p) : nv;
       savePref(key, x);
+      return x;
+    });
+  return [v, set];
+}
+
+// ---- Chiavi 'mh-device-*': stato del DISPOSITIVO, mai sincronizzato ----
+// Volume e muto appartengono all'apparecchio che suona, non al profilo
+// (modello Spotify): il server prefs rifiuterebbe comunque chiavi fuori da
+// 'mh-pref-*', syncPrefs/applyShared/pushDirty/clearLocalPrefs le ignorano
+// tutte — nemmeno la dirty list le conosce (a PC spento sono già dove devono
+// essere). LIVE_EVENT resta: allinea i consumer della STESSA chiave sullo
+// stesso dispositivo (slider in NowPlaying ↔ elementi <audio> in PlayerBar).
+export function saveDevice(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    if (typeof window !== 'undefined')
+      queueMicrotask(() => window.dispatchEvent(new CustomEvent(LIVE_EVENT, { detail: key })));
+  } catch { /* quota */ }
+}
+
+// Come usePersistedState ma per le chiavi 'mh-device-*': localStorage e
+// basta — nessun push al PC, nessuna hydrate che le sovrascriva.
+export function useDeviceState<T>(key: string, initial: T): [T, (v: T | ((p: T) => T)) => void] {
+  const [v, setV] = useState<T>(() => loadPref(key, initial));
+  useEffect(() => {
+    const h = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === key) setV(loadPref(key, initial));
+    };
+    window.addEventListener(LIVE_EVENT, h);
+    return () => window.removeEventListener(LIVE_EVENT, h);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (nv: T | ((p: T) => T)) =>
+    setV((p) => {
+      const x = typeof nv === 'function' ? (nv as (p: T) => T)(p) : nv;
+      saveDevice(key, x);
       return x;
     });
   return [v, set];

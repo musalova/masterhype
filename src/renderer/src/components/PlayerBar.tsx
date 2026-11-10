@@ -4,7 +4,8 @@ import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Disc3, Heart, Thu
 import { AnimatePresence } from 'framer-motion';
 import { useApp, notePlaybackPos, pickNextIndex } from '../store';
 import { api, mediaUrl, isRemote } from '../api';
-import { usePersistedState } from '../persist';
+import { useDeviceState } from '../persist';
+import { MUTED_KEY } from '../storePersist';
 import { pushMediaSession, stopMediaSession } from '../nativeMedia';
 import { pushBack } from '../backStack';
 import { ScreenErrorBoundary } from './common';
@@ -82,7 +83,11 @@ export default function PlayerBar() {
     if (l.t && l.played >= 30) useApp.getState().recordListen(l.t, l.played, l.dur || l.t.durationS);
     l.played = 0; l.last = 0;
   };
-  const [muted, setMuted] = usePersistedState('mh-pref-muted', false);
+  // Muto del DISPOSITIVO (mai sincronizzato): prima era 'mh-pref-muted' e un
+  // muto premuto sul PC azzerava l'audio del telefono — dove non esisteva
+  // alcun controllo per riattivarlo. Chiave mh-device-* + tasto sempre
+  // visibile su mobile: uno stato muto non può più essere invisibile.
+  const [muted, setMuted] = useDeviceState(MUTED_KEY, false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [npOpen, setNpOpen] = useState(false);
   const cur = player.current;
@@ -691,8 +696,11 @@ export default function PlayerBar() {
           className={`transition-colors max-md:hidden ${queueOpen ? 'text-accent' : 'text-dim hover:text-txt'}`}>
           <ListMusic size={17} />
         </button>
+        {/* Il muto resta visibile ANCHE su mobile: è l'unico stato che può
+            azzerare l'audio — se non si vede non si può riattivare. Lo slider
+            resta desktop-only: su telefono il cursore è nella vista brano. */}
         <button onClick={() => setMuted(!muted)} aria-label={muted ? 'Riattiva audio' : 'Disattiva audio'}
-          title={muted ? 'Riattiva audio' : 'Disattiva audio'} className="text-dim hover:text-txt max-md:hidden">
+          title={muted ? 'Riattiva audio' : 'Disattiva audio'} className={`hover:text-txt ${muted ? 'text-accent' : 'text-dim'}`}>
           {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
         </button>
         <input aria-label="Volume" type="range" min={0} max={1} step={0.05} value={muted ? 0 : player.volume}

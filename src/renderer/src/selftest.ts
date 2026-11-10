@@ -159,6 +159,22 @@ export async function runSelfTest(): Promise<SelfTestReport> {
     detail: 'mediaSession' in navigator ? 'Media Session API presente' : 'Media Session API assente su questa WebView',
   });
 
+  // 9b. Volume/muto in-app: la causa più comune di "suona ma non si sente" —
+  // a.volume=0 da uno stato non visibile. Oggi è del dispositivo (mh-device-*),
+  // ma la riga resta la diagnosi in un colpo d'occhio.
+  {
+    let volN = 0.8, muted = false;
+    try {
+      const v = localStorage.getItem('mh-device-volume');
+      if (v != null && Number.isFinite(Number(JSON.parse(v)))) volN = Math.min(1, Math.max(0, Number(JSON.parse(v))));
+      muted = JSON.parse(localStorage.getItem('mh-device-muted') ?? 'false') === true;
+    } catch { /* chiavi corrotte: restano i default */ }
+    rows.push({
+      name: 'Volume app', ok: muted || volN === 0 ? false : null, ms: 0,
+      detail: `${Math.round(volN * 100)}%${muted ? ' · MUTO attivo — si riattiva dal tasto altoparlante (barra o schermata del brano)' : ''}${volN === 0 && !muted ? ' — volume a zero: alzalo dal cursore nella schermata del brano' : ''}`,
+    });
+  }
+
   // 10. Coda sincronizzazione verso il PC
   const pend = pendingCount();
   rows.push({
