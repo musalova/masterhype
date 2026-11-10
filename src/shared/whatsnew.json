@@ -1,4 +1,8 @@
 {
+  "0.5.12": [
+    "Il volume del telefono non dipende più dal PC: se era rimasto muto torna a suonare da solo",
+    "Nella schermata del brano sul telefono c'è ora il cursore del volume, e il tasto muto si vede sempre"
+  ],
   "0.5.11": [
     "Menu riorganizzato: sul PC poche categorie espandibili (Scopri, Raccolta, Crea) con tutte le funzioni dentro",
     "Sul telefono il pulsante Altro apre tutte le funzioni: Trend, Download, Assistente, Impostazioni e profili finalmente raggiungibili",
