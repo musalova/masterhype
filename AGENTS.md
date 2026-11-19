@@ -8,7 +8,9 @@
   configurato sulla macchina). Push: `git push origin main` usa Git Credential
   Manager (login OAuth di `musalova`, scope `gist, repo, workflow` → può
   pushare anche `.github/workflows/`). git NON legge `GH_TOKEN`: quella PAT
-  (scope `public_repo`) serve solo alle API GitHub di `release.mjs`.
+  (scope `public_repo`) serve solo alle API GitHub di `release.mjs` — e anche
+  il token OAuth di GCM va bene in sua vece (scope `repo` = Contents:RW), se
+  la PAT dedicata è fine-grained senza quel permesso.
   Verifica scope senza stampare il token: `git credential fill` → header
   `X-OAuth-Scopes` di `api.github.com/user`.
 - NON in git (vedi `.gitignore`): `resources/bin/*.exe` (yt-dlp/ffmpeg/
@@ -27,7 +29,8 @@
 - `npm run release` — release completa: APK (versionCode +1) → EXE con l'APK
   dentro → `release/feed/` + **publish su GitHub Releases** (repo
   `musalova/masterhype`, release `vX.Y.Z` con i 5 asset del feed; serve env
-  `GH_TOKEN` = PAT Contents:RW, `GH_REPO` per override). Il feed pubblico è
+  `GH_TOKEN` = PAT Contents:RW, `GH_REPO` per override; upload asset via curl
+  per file >64MB — fetch/undici muore a ~300s su un EXE da 250MB). Il feed pubblico è
   `…/releases/latest/download/` (= `DEFAULT_UPDATE_FEED`, cablato nell'app:
   update out-of-box). `MH_FEED_DIR=<dir>` copia il feed anche altrove (share/mount server)
   **A OGNI bump di versione** aggiungere una voce in `src/shared/whatsnew.json`

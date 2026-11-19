@@ -102,6 +102,16 @@ async function publishGithub() {
   const up = release.upload_url.replace(/\{[^}]*\}/, '');
   for (const [src, name] of files) {
     console.log(`> upload ${name}`);
+    // fetch/undici bufferizza il body in RAM e ha bodyTimeout ~300s: su un exe
+    // da ~250MB l'upload muore a meta' ("fetch failed"). Sopra i 64MB si passa
+    // a curl: stream da disco, niente timeout, retry nativo.
+    if (statSync(src).size > 64 * 1e6) {
+      const r = spawnSync('curl', ['-sfS', '--retry', '3', '--retry-all-errors', '-X', 'POST',
+        '-H', `Authorization: Bearer ${process.env.GH_TOKEN}`, '-H', 'Content-Type: application/octet-stream',
+        '--data-binary', `@${src}`, `${up}?name=${encodeURIComponent(name)}`], { stdio: ['ignore', 'ignore', 'inherit'] });
+      if (r.status !== 0) throw new Error(`upload ${name}: curl exit ${r.status}`);
+      continue;
+    }
     const r = await fetch(`${up}?name=${encodeURIComponent(name)}`, {
       method: 'POST',
       headers: {
