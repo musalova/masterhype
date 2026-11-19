@@ -24,8 +24,8 @@ const KIND_LABEL: Record<string, string> = {
   'generic': 'altro',
 };
 
-// Aspetto: palette accent + riduzione animazioni. Preferenze mh-pref-* →
-// sincronizzate tra PC e telefono (stesso profilo, stesso look ovunque).
+// Aspetto: palette accent + riduzione animazioni. Sono del DISPOSITIVO:
+// telefono e PC possono avere look diversi, una scelta qui non tocca l'altro.
 function AppearanceCard() {
   const [accent, setAccent] = usePersistedState<AccentId>(ACCENT_KEY, 'sunset');
   const [motion, setMotion] = usePersistedState<'on' | 'off'>(MOTION_KEY, 'on');

@@ -1,4 +1,8 @@
 {
+  "0.5.13": [
+    "Il telefono non perde più le tue preferenze: tema, coda, schermata e lettore restano tuoi, il PC non li cambia più",
+    "Torna il pulsante Home nella barra laterale del PC"
+  ],
   "0.5.12": [
     "Il volume del telefono non dipende più dal PC: se era rimasto muto torna a suonare da solo",
     "Nella schermata del brano sul telefono c'è ora il cursore del volume, e il tasto muto si vede sempre"

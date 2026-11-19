@@ -57,7 +57,8 @@ vi.mock('../src/renderer/src/api', () => ({
       set: (k: string, v: unknown) => {
         if (!state.online) return Promise.reject(new Error('offline'));
         state.setCalls.push(k);
-        state.db.set(k, JSON.stringify(v));
+        if (v == null) state.db.delete(k); // null = DELETE (come prefsSet server)
+        else state.db.set(k, JSON.stringify(v));
         return Promise.resolve();
       },
       getAll: () => {
@@ -139,27 +140,36 @@ describe('savedMuted — non eredita il muto del PC', () => {
 });
 
 describe('isolamento dalle preferenze condivise', () => {
-  it('syncPrefs idrata mh-pref-* ma non legge né sovrascrive mh-device-*', async () => {
+  it('syncPrefs idrata solo la whitelist: mh-device-* e le altre mh-pref-* restano del dispositivo', async () => {
     LS.setItem('mh-device-volume', '0.6');
     LS.setItem('mh-device-muted', 'false');
-    // Il PC ha i valori che rendevano il telefono muto
+    // Il PC ha valori per chiavi non condivise (scritte da versioni vecchie)
     state.db.set('mh-pref-volume', '0');
     state.db.set('mh-pref-muted', 'true');
     state.db.set('mh-pref-accent', '"ocean"');
+    state.db.set('mh-pref-cdqueue', '[4]'); // l'unica ancora condivisa
     await persist.syncPrefs();
-    // Hydrate è avvenuta per le chiave condivise…
-    expect(JSON.parse(LS.getItem('mh-pref-accent')!)).toBe('ocean');
-    // …ma lo stato effettivo del dispositivo è intatto
+    // Nessuna pref non condivisa è stata idratata sul dispositivo…
+    expect(LS.getItem('mh-pref-accent')).toBeNull();
+    expect(LS.getItem('mh-pref-volume')).toBeNull();
+    // …e le loro copie stale sono state spazzate dal DB del PC
+    expect(state.db.has('mh-pref-accent')).toBe(false);
+    expect(state.db.has('mh-pref-volume')).toBe(false);
+    // La tracklist CD condivisa invece si idrata normalmente
+    expect(JSON.parse(LS.getItem('mh-pref-cdqueue')!)).toEqual([4]);
+    // …e lo stato effettivo del dispositivo è intatto
     expect(sp.savedVolume()).toBe(0.6);
     expect(sp.savedMuted()).toBe(false);
   });
-  it('clearLocalPrefs (cambio profilo) non porta via le chiavi del dispositivo', () => {
+  it('clearLocalPrefs (cambio profilo) toglie solo le condivise: dispositivo intatto', () => {
     LS.setItem('mh-device-volume', '0.6');
     LS.setItem('mh-device-muted', 'true');
-    LS.setItem('mh-pref-volume', '0.9');
+    LS.setItem('mh-pref-libsort', '"title"'); // pref del dispositivo: sopravvive
+    LS.setItem('mh-pref-cdqueue', '[2]');     // condivisa: va via (idraterà il nuovo profilo)
     persist.clearLocalPrefs();
     expect(LS.getItem('mh-device-volume')).not.toBeNull();
     expect(LS.getItem('mh-device-muted')).not.toBeNull();
-    expect(LS.getItem('mh-pref-volume')).toBeNull();
+    expect(JSON.parse(LS.getItem('mh-pref-libsort')!)).toBe('title');
+    expect(LS.getItem('mh-pref-cdqueue')).toBeNull();
   });
 });

@@ -1,10 +1,13 @@
-// Persistenza dello store: chiavi mh-pref-* condivise PC↔telefono e chiavi
-// locali per-utente. Estratto da store.ts — funzioni pure, niente stato zustand.
+// Persistenza dello store: chiavi mh-pref-* del dispositivo (una sola
+// condivisa col PC), chiavi locali per-utente. Estratto da store.ts —
+// funzioni pure, niente stato zustand.
 import type { LibraryTrack } from '../../shared/types';
 import { myUserId } from './remote';
 import { loadPref, savePref } from './persist';
 
-// Chiavi 'mh-pref-*': si sincronizzano sullo store condiviso PC↔telefono
+// 'mh-pref-cdqueue' è l'UNICA mh-pref-* ancora condivisa col PC (whitelist
+// SHARED_PREF_KEYS in persist.ts): scaletta di lavoro del masterizzatore.
+// Le altre mh-pref-* sono del dispositivo — non si sincronizzano più.
 export const CD_KEY = 'mh-pref-cdqueue';
 // Download avviati "per il CD" ancora in corso: persistiti (chiave locale, non
 // condivisa) così un riavvio dell'app non perde l'aggiunta automatica.

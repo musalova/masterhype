@@ -17,9 +17,10 @@ import { phoneReconcile, phoneIndex, phoneIndexPut, phoneIndexDel, phonePut, pho
 import { trackKey } from '../../shared/taste';
 import { nextShuffleIndex, shuffleKey } from './shuffle';
 
-// Chiavi legacy → mh-pref-*: entrano nello store condiviso PC↔telefono.
-// ECCEZIONE 'mh-volume': va alla chiave di dispositivo — volume/muto non si
-// condividono più (un muto dal PC mutava anche il telefono, irrecuperabile).
+// Chiavi legacy → mh-pref-*: oggi per-dispositivo (solo mh-pref-cdqueue
+// resta condivisa col PC — whitelist in persist.ts). ECCEZIONE 'mh-volume':
+// va alla chiave di dispositivo — volume/muto non si condividono mai
+// (un muto dal PC mutava anche il telefono, irrecuperabile).
 migratePrefs({
   'mh-volume': 'mh-device-volume',
   'mh-playerprefs': 'mh-pref-player',
@@ -467,7 +468,7 @@ export const useApp = create<AppState>((set, get) => ({
       // Stato fresco dopo l'await: usare lo snapshot `p` perderebbe i cambi
       // di coda fatti dall'utente mentre la rete rispondeva
       const p2 = useApp.getState().player;
-      if (p2.current?.videoId !== cur.videoId) return; // cambiato nel frattempo
+      if (p2.current?.videoId !== cur.videoId) { set({ buffering: false }); return; } // cambiato/sparito nel frattempo: lo spinner non resta appeso
       // dedup su videoId E su artista|titolo: lo stesso brano con altro videoId
       // (remaster, topic channel) non deve rientrare in coda
       const seenKeys = new Set(p2.queue.map((x) => trackKey(x.artist, x.title)));
@@ -1069,7 +1070,8 @@ useApp.subscribe((s, prev) => {
   clearTimeout(qTimer);
   qTimer = setTimeout(() => {
     const p = useApp.getState().player;
-    // 'mh-pref-queue' → la coda si condivide col PC: riprendi dove eri rimasto
+    // 'mh-pref-queue' è del dispositivo: la coda è del player locale — il PC
+    // non deve più sovrascriverla (era il telefono a perdere la propria)
     savePref(QUEUE_KEY, { queue: p.queue.slice(0, 200), index: p.queueIndex, radio: p.radio });
   }, 800);
 });

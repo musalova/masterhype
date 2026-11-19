@@ -1,6 +1,6 @@
-// Aspetto (palette accent + animazioni): letto al boot da persist (già idratato
-// dal server) e riapplicato quando la preferenza cambia — anche da un altro
-// dispositivo via 'mh-pref-live'. Le palette vivono in index.css (data-accent).
+// Aspetto (palette accent + animazioni): preferenza del DISPOSITIVO — letta
+// da persist (localStorage) e riapplicata quando cambia via 'mh-pref-live'.
+// Le palette vivono in index.css (data-accent).
 import { loadPref } from './persist';
 
 export type AccentId = 'sunset' | 'ocean' | 'lime' | 'violet' | 'gold' | 'mono';

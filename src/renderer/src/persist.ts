@@ -2,16 +2,18 @@ import { useEffect, useState } from 'react';
 import { api } from './api';
 import { onReconnected, myUserId } from './remote';
 
-// Preferenze condivise PC↔telefono: la tabella prefs del DB è lo store unico.
-// Ogni scrittura va in localStorage (lettura sincrona all'avvio) E nel DB
-// condiviso — desktop via IPC, telefono via HTTP. All'avvio e a ogni
-// riconnessione syncPrefs riporta le mh-pref-* dal DB nel localStorage.
-//
-// Condivise: shuffle/repeat, crossfade, schermata, ordinamenti,
-// code (player e CD Builder), opzioni assistente/CD…  — chiavi 'mh-pref-*'.
-// NON condivise: volume e muto sono del DISPOSITIVO che suona (chiavi
-// 'mh-device-*', vedi saveDevice in fondo) — uno "0" o un muto scritto dal
-// PC lasciava il telefono silenzioso senza alcun controllo per rimediare.
+// Preferenze: DEFAULT = DISPOSITIVO, condivise = whitelist.
+// Ogni chiave 'mh-pref-*' sta in localStorage (lettura sincrona all'avvio) e
+// basta — schermata, coda player, tema, ordinamenti, opzioni, shuffle… sono
+// scelte di QUESTO apparecchio: un set fatto sul PC non deve mai riscrivere
+// quelle del telefono (era il bug "il telefono perde tutte le preferenze").
+// Sincronizzano col DB del PC SOLO le chiavi in SHARED_PREF_KEYS — oggi una
+// sola, la tracklist CD: è un artefatto di lavoro comune (il masterizzatore
+// è sul PC), non una preferenza. Per quelle vale il vecchio modello:
+// scrittura locale + push (dirty se fallisce) e hydrate/broadcast live.
+// 'mh-device-*' restano mai-sincronizzate per definizione (volume/muto:
+// uno "0" scritto dal PC lasciava il telefono silenzioso irrimediabilmente).
+export const SHARED_PREF_KEYS: ReadonlySet<string> = new Set(['mh-pref-cdqueue']);
 
 export function loadPref<T>(key: string, fallback: T): T {
   try {
@@ -56,6 +58,9 @@ export function savePref(key: string, value: unknown): void {
     if (typeof window !== 'undefined')
       queueMicrotask(() => window.dispatchEvent(new CustomEvent(LIVE_EVENT, { detail: key })));
   } catch { /* quota */ }
+  // Chiave del dispositivo: finisce qui — niente push, niente dirty, niente
+  // hydrate che la possa sovrascrivere. Solo la whitelist viaggia col PC.
+  if (!SHARED_PREF_KEYS.has(key)) return;
   // Pubblica nello store condiviso (DB del PC). Se fallisce — telefono
   // offline o PC spento — la chiave resta "sporca" e riparte al reconnect.
   void api().prefs.set(key, value)
@@ -124,6 +129,10 @@ function restoreArchivedValues(): void {
 // archiviare ciò che non è riuscito a partire.
 export async function pushDirty(): Promise<void> {
   for (const k of dirtySet()) {
+    // Chiavi non condivise rimaste dirty da versioni precedenti: il flag si
+    // consuma senza push — scriverle e poi cancellarle via sweep è un giro
+    // inutile, e sul PC non devono comunque più stare.
+    if (!SHARED_PREF_KEYS.has(k)) { clearDirty(k); continue; }
     const raw = localStorage.getItem(k);
     if (raw == null) { clearDirty(k); continue; }
     try {
@@ -139,12 +148,20 @@ async function syncPrefsBody(): Promise<void> {
   try {
     const all = await api().prefs.getAll();
     for (const [k, v] of Object.entries(all ?? {})) {
+      if (!k.startsWith('mh-pref-')) continue;
+      if (!SHARED_PREF_KEYS.has(k)) {
+        // Copia stale di una chiave ora per-dispositivo (scritta da una
+        // versione vecchia): la cancelliamo dal PC — non è più roba sua.
+        // set(k,null)=DELETE; l'evento broadcast è filtrato dalla whitelist.
+        void api().prefs.set(k, null).catch(() => {});
+        continue;
+      }
       // Il dirty check va fatto AL MOMENTO dell'apply, non su uno snapshot
       // preso prima del getAll: una savePref offline fallita durante l'attesa
       // della risposta si è marcata dirty nel frattempo — sovrascriverla col
       // valore vecchio del PC la perderebbe (il flag resta ma punta al valore
       // già clobberato). dirtySet() rilegge localStorage a ogni chiave.
-      if (k.startsWith('mh-pref-') && !dirtySet().has(k)) applyShared(k, v);
+      if (!dirtySet().has(k)) applyShared(k, v);
     }
   } catch { /* store condiviso non raggiungibile: restano le pref locali */ }
 }
@@ -165,28 +182,30 @@ onReconnected(() => { void syncPrefs(); });
 
 // Broadcast live: un set fatto dall'altro dispositivo arriva qui in tempo
 // reale (es. il telefono riordina il CD → il PC vede subito la nuova scaletta).
+// Solo chiavi della whitelist: una pref dell'altro device non ci riguarda.
 // Il payload porta `u`: i set di ALTRI profili vengono ignorati — due utenti
 // sullo stesso PC non si mescolano le preferenze.
 api().prefs.onEvent((p) => {
-  if (p && typeof p.k === 'string' && p.k.startsWith('mh-pref-') && (p.u == null || p.u === myUserId()))
+  if (p && typeof p.k === 'string' && SHARED_PREF_KEYS.has(p.k) && (p.u == null || p.u === myUserId()))
     applyShared(p.k, p.v);
 });
 
-// Cambio profilo: svuota la vista locale delle mh-pref-* — hydrate riempirà
-// quelle del nuovo profilo. Le code dirty namespacizzate ('mh-pref-dirty:u*')
-// restano: contengono scritture offline degli ALTRI profili.
+// Cambio profilo: svuota la vista locale delle chiavi CONDIVISE — hydrate
+// riempirà quelle del nuovo profilo. Le pref del dispositivo sopravvivono
+// (sono dell'apparecchio, non del profilo). Le code dirty namespacizzate
+// ('mh-pref-dirty:u*') restano: contengono scritture offline di ALTRI profili.
 export function clearLocalPrefs(): void {
   try {
     for (const k of Object.keys(localStorage))
-      if (k.startsWith('mh-pref-') && !k.startsWith('mh-pref-dirty')) localStorage.removeItem(k);
+      if (SHARED_PREF_KEYS.has(k)) localStorage.removeItem(k);
   } catch { /* */ }
 }
 
-// Come useState ma scrive/legge localStorage: la preferenza resta salvata
-// e (essendo 'mh-pref-*') si sincronizza sullo store condiviso.
+// Come useState ma scrive/legge localStorage: la preferenza resta salvata.
+// Se la chiave è nella whitelist condivisa si sincronizza anche col PC.
 export function usePersistedState<T>(key: string, initial: T): [T, (v: T | ((p: T) => T)) => void] {
   const [v, setV] = useState<T>(() => loadPref(key, initial));
-  // Cambi arrivati dall'altro dispositivo → rileggo la chiave
+  // Cambi sulla stessa chiave → rileggo (scrittura locale, o sync se condivisa)
   useEffect(() => {
     const h = (e: Event) => {
       if ((e as CustomEvent<string>).detail === key) setV(loadPref(key, initial));
@@ -205,10 +224,10 @@ export function usePersistedState<T>(key: string, initial: T): [T, (v: T | ((p: 
 
 // ---- Chiavi 'mh-device-*': stato del DISPOSITIVO, mai sincronizzato ----
 // Volume e muto appartengono all'apparecchio che suona, non al profilo
-// (modello Spotify): il server prefs rifiuterebbe comunque chiavi fuori da
-// 'mh-pref-*', syncPrefs/applyShared/pushDirty/clearLocalPrefs le ignorano
-// tutte — nemmeno la dirty list le conosce (a PC spento sono già dove devono
-// essere). LIVE_EVENT resta: allinea i consumer della STESSA chiave sullo
+// (modello Spotify). In pratica una mh-pref-* non condivisa si comporta
+// allo stesso modo; 'mh-device-*' resta il prefisso esplicito per lo stato
+// hardware — il server prefs rifiuterebbe comunque chiavi fuori 'mh-pref-*'.
+// LIVE_EVENT resta: allinea i consumer della STESSA chiave sullo
 // stesso dispositivo (slider in NowPlaying ↔ elementi <audio> in PlayerBar).
 export function saveDevice(key: string, value: unknown): void {
   try {
@@ -218,8 +237,8 @@ export function saveDevice(key: string, value: unknown): void {
   } catch { /* quota */ }
 }
 
-// Come usePersistedState ma per le chiavi 'mh-device-*': localStorage e
-// basta — nessun push al PC, nessuna hydrate che le sovrascriva.
+// Come usePersistedState ma esplicito per le chiavi 'mh-device-*':
+// localStorage e basta — nessun push al PC, nessuna hydrate che le sovrascriva.
 export function useDeviceState<T>(key: string, initial: T): [T, (v: T | ((p: T) => T)) => void] {
   const [v, setV] = useState<T>(() => loadPref(key, initial));
   useEffect(() => {

@@ -82,7 +82,10 @@
   — TRANNE i play di brani con skip/hide storici (negativeTracks confronta
   skip vs play su tutta la storia); segnali espliciti (like/skip/hide/download/
   burn/unlike) mai potati = memoria gusti; `artist_cooc`/`usage` potati a 18 mesi
-  dallo ts; VACUUM solo se il pruning ha cancellato righe), `settings.ts`, `ipc.ts`, `services/`
+  dallo ts; `devices` con `user_id` NULL e `COALESCE(last_seen,created_at)`
+  >30gg potati (pairing abbandonati: l'orfano non resta valido per
+  `device:claim` né sporca la lista — un device slegato ma ancora vivo non è
+  orfano); VACUUM solo se il pruning ha cancellato righe), `settings.ts`, `ipc.ts`, `services/`
 - `src/main/services/` — `ytmusic.ts` (youtubei.js), `downloader.ts` (yt-dlp+ffmpeg), `library.ts`,
   `sources.ts` (Deezer/Last.fm/Spotify), `recommend.ts` (scoring+assistente), `trends.ts`, `burner.ts`
 - **Audio non distruttivo**: i download NON cuociono loudnorm/silenceremove nel
@@ -147,7 +150,9 @@
     BINDING — `X-MH-User` viene IGNORATO; la risposta porta `X-MH-Bound-User`
     così il client ri-allinea `conf.user` se il PC ha riassegnato il device.
     `user_id NULL` = pairato ma non associato: può solo `users:list`/`users:create`
-    (BOOTSTRAP_CHANNELS) e `device:claim`. Un device non legato che chiama un
+    (BOOTSTRAP_CHANNELS) e `device:claim`. Gli orfani inattivi >30gg vengono
+    potati dalla manutenzione (un pairing abbandonato non resta valido). Un
+    device non legato che chiama un
     canale dati con `X-MH-User` valido fa claim IMPLICITO (compatibilità con
     client pre-claim: stesso livello di fiducia, il token l'ha già consegnato
     il pairing autorizzato dal PC). Ogni uso è contato in `usage` come
@@ -164,7 +169,8 @@
 - Header `X-MH-User` inesistente/non numerico → 401 'profilo non valido' sulle
   chiamate dati COL CODICE CONDIVISO (il client mostra la SCELTA PROFILO
   conservando il pairing — flag 'mh-pick-profile', NON resetToPairing); header
-  assente → profilo legacy 1. Con un device token l'header non vale niente.
+  assente → primo profilo esistente (id=1 è eliminabile: ripiego come
+  desktopUser, mai utente fantasma). Con un device token l'header non vale niente.
   ECCEZIONE: `/api/info` (probe di salute) NON valida il profilo — un client con
   profilo stale deve comunque rilevare che il PC è vivo.
 - Lista profili VUOTA dal gate (server legacy senza users:* → 404 → []) →
@@ -248,19 +254,26 @@
 - `src/renderer/src/remote.ts` — connessione al PC (conf, token, SSE, claim);
   `remoteApi.ts` = specchio di `MasterHypeApi` via HTTP+SSE; `api.ts` sceglie
   `window.masterhype ?? remoteApi`
-- Preferenze condivise: la tabella `prefs` del DB è lo store unico. Solo le chiavi `mh-pref-*`
-  si sincronizzano (hydrate filtra su quel prefisso). `savePref` scrive sempre anche nel DB
-  (`api().prefs.set`) su entrambe le piattaforme. IMPORTANTE: `hydratePrefs` deve completare
-  PRIMA dell'init dello store zustand — per questo `main.tsx` importa `./App` dinamicamente
-  dopo l'await; non tornare a import statici o le pref idratate non verranno applicate
+- Preferenze: DEFAULT = DISPOSITIVO. Le chiavi `mh-pref-*` vivono in localStorage
+  e basta (schermata, code player, tema, ordinamenti, opzioni — il PC non deve
+  riscrivere quelle del telefono: era il bug "perde tutte le preferenze").
+  Si sincronizzano col DB SOLO le chiavi in `SHARED_PREF_KEYS` (persist.ts):
+  oggi solo `mh-pref-cdqueue` (artefatto di lavoro comune del masterizzatore).
+  Per quelle: `savePref` scrive locale + push `api().prefs.set` (dirty se
+  fallisce), hydrate/broadcast live all'avvio e al reconnect; syncPrefs
+  cancella anche dal PC le copie stale di chiavi non condivise. IMPORTANTE:
+  `syncPrefs` deve completare PRIMA dell'init dello store zustand — per questo
+  `main.tsx` importa `./App` dinamicamente dopo l'await; non tornare a import
+  statici o la tracklist CD idratata non verrebbe applicata
 - Sync live + reconnect (persist.ts/remote.ts): ogni `prefs:set` fa broadcast SSE/IPC
-  (`remote:prefs:event` → `applyShared` → evento DOM `mh-pref-live` che aggiorna store e
-  usePersistedState). `savePref` dispatcha `mh-pref-live` ANCHE per le scritture locali
-  (microtask — mai sincrono dentro un updater setState), così chiavi lette da più
-  componenti restano allineate in-sessione. Scrittura fallita (offline o errore server,
-  su QUALUNQUE piattaforma — desktop incluso) → chiave "dirty" in `mh-pref-dirty:u<id>` →
-  `syncPrefs()` la spinge prima dell'hydrate (pushDirty continua sulle altre chiavi:
-  niente break), e hydrate NON applica le chiavi dirty (last-writer per-chiave).
+  (`remote:prefs:event` → `applyShared` se la chiave è whitelisted → evento DOM
+  `mh-pref-live` che aggiorna store e usePersistedState). `savePref` dispatcha
+  `mh-pref-live` ANCHE per le scritture locali (microtask — mai sincrono dentro
+  un updater setState), così chiavi lette da più componenti restano allineate
+  in-sessione. Scrittura fallita di chiave condivisa (offline o errore server,
+  su QUALUNQUE piattaforma — desktop incluso) → "dirty" in `mh-pref-dirty:u<id>` →
+  `syncPrefs()` la spinge prima dell'hydrate (pushDirty continua sulle altre
+  chiavi: niente break), e hydrate NON applica le chiavi dirty (last-writer per-chiave).
   Idem per `settings`: ogni `setSettings` broadcasta `settings:event` (hook in
   index.ts — copre anche le scritture interne) → App lo applica a store +
   `mh-settings-cache`; al reconnect `loadSettings()` rilegge il canonico DOPO
@@ -273,7 +286,8 @@
   pagina (APK/PWA — `swControlled()`), mediaUrl/rewriteMedia/EventSource
   emettono URL SAME-ORIGIN `/__pc/…` e il SW inoltra al PC con `X-MH-Token` in
   HEADER (postMessage `mh-pc-auth` a ogni persistConf/controllerchange,
-  persistito in IDB `mh-sw` per i restart del SW). Il token non sta più in
+  persistito in IDB `mh-sw` per i restart del SW; `mh-pc-clear` allo
+  scollega cancella il record → /__pc/ risponde 503). Il token non sta più in
   nessuna URL subresource (cronologia, log proxy, Referer). Fallback `?token=`
   dove il SW non si registra (tab browser su http://LAN = contesto non sicuro)
   — è comunque un device token, non la chiave admin. `Referrer-Policy:
@@ -513,7 +527,10 @@
   = `needsProfilePick() || (!hasRemoteConf() && !isStandalone())` — il gate si
   mostra SOLO al primo avvio vergine e lì "Continua senza PC" (`enterStandalone`)
   è la via di ingresso. Uscita: Impostazioni → "Collega un PC" (`exitStandalone`)
-  → torna il gate. `clearRemoteConf` (Scollega) rimuove ANCHE il flag → gate.
+  → torna il gate. `clearRemoteConf` (Scollega) rimuove la conf salvata
+  (`mh-remote-conf`), i flag standalone/pick-profile E notifica `mh-pc-clear`
+  al SW → gate vero (senza, al reload il pairing tornava attivo e un device
+  revocato ricaricava all'infinito invece di mostrare il gate).
 - **Profilo virtuale u1**: in standalone `myUserId()`=1 → code/cache/indice
   telefono stanno sotto `:u1`. La migrazione si regge sul marcatore DUREVOLE
   `mh-standalone-era` (settato da enterStandalone, NON tolto da exitStandalone):

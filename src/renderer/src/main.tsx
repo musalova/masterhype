@@ -21,13 +21,12 @@ async function boot(): Promise<void> {
     await redeemPairParam();
   }
   const needsPairing = remote && (needsProfilePick() || (!hasRemoteConf() && !isStandalone()));
-  // Le preferenze condivise (volume, schermata, code…) devono arrivare dal
-  // DB del PC PRIMA che lo store zustand si inizializzi: App va importato
-  // dinamicamente, altrimenti savedVolume/savedScreen/restorePlayerQueue
-  // leggerebbero i valori vecchi (bug: l'hydration era invisibile allo store).
-  // PC raggiungibile: hydrate <200ms su LAN. PC spento: la fetch verso l'host
-  // morto non deve fermare lo splash — tetto 3.5s, poi l'app parte lo stesso
-  // e la sync continua in background (applyShared aggiorna lo stato live).
+  // La tracklist CD condivisa deve arrivare dal DB del PC PRIMA che lo store
+  // zustand si inizializzi (le altre mh-pref-* sono del dispositivo: niente da
+  // idratare): App va importato dinamicamente o loadLibrary leggerebbe la
+  // scaletta vecchia. PC raggiungibile: hydrate <200ms su LAN. PC spento: la
+  // fetch verso l'host morto non deve fermare lo splash — tetto 3.5s, poi
+  // l'app parte lo stesso e la sync continua in background.
   if (!needsPairing) {
     // Conf salvata col codice condiviso del PC (QR/manuale, o pairing
     // pre-device-token): la converte in un token per dispositivo legato a un

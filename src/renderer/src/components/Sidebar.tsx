@@ -34,7 +34,9 @@ const PARENT: Partial<Record<Screen, Screen>> = { trends: 'search', downloads: '
 // Dashboard desktop: poche categorie espandibili, le funzioni come sottovoci.
 // kids vuoti = voce singola; un solo kid = voce piatta senza chevron.
 const GROUPS: { id: string; label: string; icon: typeof Home; kids: { id: Screen; label: string; icon: typeof Home }[] }[] = [
-  { id: 'home', label: 'Home', icon: Home, kids: [] },
+  // kids vuoto = la voce sparisce: Home ha bisogno del suo kid per renderizzare
+  // (ramo "voce singola/piatta" — label e stato attivo sono già casi speciali)
+  { id: 'home', label: 'Home', icon: Home, kids: [{ id: 'home', label: 'Home', icon: Home }] },
   { id: 'discover', label: 'Scopri', icon: Compass, kids: [
     { id: 'search', label: 'Cerca', icon: Search },
     { id: 'stations', label: 'Stazioni', icon: Radio },

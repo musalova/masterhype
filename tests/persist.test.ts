@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Il sistema di preferenze condivise (persist.ts) è il cuore di "l'APK
-// memorizza le preferenze": localStorage immediato + push al DB del PC +
-// dirty list per le scritture offline + hydrate che non clobbera il dirty.
+// Il sistema di preferenze (persist.ts) è il cuore di "l'APK memorizza le
+// preferenze": localStorage immediato per TUTTE le mh-pref-*, push al DB del
+// PC solo per la whitelist condivisa (SHARED_PREF_KEYS = tracklist CD),
+// dirty list per le scritture condivise offline + hydrate delle sole condivise.
 
 // ---- localStorage stub (Object.keys compatibile) ----
 function mkStorage() {
@@ -57,7 +58,8 @@ vi.mock('../src/renderer/src/api', () => ({
       set: (k: string, v: unknown) => {
         if (!state.online) return Promise.reject(new Error('offline'));
         if (state.failSet.has(k)) return Promise.reject(new Error('chiave non valida'));
-        state.db.set(k, JSON.stringify(v));
+        if (v == null) state.db.delete(k); // null = DELETE (come prefsSet server)
+        else state.db.set(k, JSON.stringify(v));
         return Promise.resolve();
       },
       getAll: () => {
@@ -96,22 +98,33 @@ beforeEach(() => {
 });
 
 describe('savePref — la preferenza si memorizza SEMPRE', () => {
-  it('online: localStorage + push al PC + dirty pulita', async () => {
-    persist.savePref('mh-pref-volume', 0.5);
-    expect(JSON.parse(LS.getItem('mh-pref-volume')!)).toBe(0.5);
+  it('chiave condivisa: localStorage + push al PC + dirty pulita', async () => {
+    persist.savePref('mh-pref-cdqueue', [1, 2]);
+    expect(JSON.parse(LS.getItem('mh-pref-cdqueue')!)).toEqual([1, 2]);
     await Promise.resolve(); // flush microtask/promise
     await new Promise((r) => setTimeout(r, 0));
-    expect(JSON.parse(state.db.get('mh-pref-volume')!)).toBe(0.5);
+    expect(JSON.parse(state.db.get('mh-pref-cdqueue')!)).toEqual([1, 2]);
     expect(dirtyList()).toEqual([]);
   });
 
-  it('PC spento: scrive in locale e marca dirty — nessuna perdita', async () => {
+  it('chiave del dispositivo: localStorage e basta — niente push né dirty', async () => {
+    persist.savePref('mh-pref-libsort', 'title');
+    expect(JSON.parse(LS.getItem('mh-pref-libsort')!)).toBe('title');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(state.db.has('mh-pref-libsort')).toBe(false); // mai arrivata al PC
+    expect(dirtyList()).toEqual([]);
+  });
+
+  it('PC spento: la condivisa marca dirty, quella del dispositivo resta solo locale', async () => {
     state.online = false;
+    persist.savePref('mh-pref-cdqueue', [7]);
     persist.savePref('mh-pref-accent', 'ocean');
     await new Promise((r) => setTimeout(r, 0));
+    expect(JSON.parse(LS.getItem('mh-pref-cdqueue')!)).toEqual([7]);
+    expect(dirtyList()).toEqual(['mh-pref-cdqueue']);
     expect(JSON.parse(LS.getItem('mh-pref-accent')!)).toBe('ocean');
-    expect(dirtyList()).toContain('mh-pref-accent');
-    expect(state.db.has('mh-pref-accent')).toBe(false);
+    expect(dirtyList()).not.toContain('mh-pref-accent'); // le locali non si sporcano
+    expect(state.db.size).toBe(0);
   });
 
   it('la scrittura locale notifica i consumer (mh-pref-live)', async () => {
@@ -121,85 +134,101 @@ describe('savePref — la preferenza si memorizza SEMPRE', () => {
   });
 });
 
-describe('syncPrefs — push dirty + hydrate senza clobber', () => {
-  it('al reconnect spinge le chiavi sporche e idrata le altre', async () => {
-    // Scrittura offline
+describe('syncPrefs — push dirty + hydrate solo delle condivise', () => {
+  it('al reconnect spinge la condivisa sporca e idrata la condivisa del PC', async () => {
+    // Scrittura condivisa offline
     state.online = false;
-    persist.savePref('mh-pref-volume', 0.3);
+    persist.savePref('mh-pref-cdqueue', [3, 4]);
     await new Promise((r) => setTimeout(r, 0));
-    expect(dirtyList()).toContain('mh-pref-volume');
+    expect(dirtyList()).toContain('mh-pref-cdqueue');
 
-    // Nel frattempo il PC ha un valore diverso per un'altra chiave
-    state.db.set('mh-pref-accent', JSON.stringify('midnight'));
-
-    // PC torna: sync = push dirty + hydrate
     state.online = true;
     await persist.syncPrefs();
 
-    // Il nostro volume offline ha vinto (è stato pushato)
-    expect(JSON.parse(state.db.get('mh-pref-volume')!)).toBe(0.3);
-    expect(dirtyList()).not.toContain('mh-pref-volume');
-    // E l'accent del PC è arrivato in locale
-    expect(JSON.parse(LS.getItem('mh-pref-accent')!)).toBe('midnight');
+    expect(JSON.parse(state.db.get('mh-pref-cdqueue')!)).toEqual([3, 4]);
+    expect(dirtyList()).not.toContain('mh-pref-cdqueue');
   });
 
-  it('hydrate NON sovrascrive una chiave sporca col valore vecchio del PC', async () => {
-    state.db.set('mh-pref-motion', JSON.stringify('off')); // PC: off
-    state.online = false;
-    persist.savePref('mh-pref-motion', 'on'); // noi: on, mai arrivata
-    await new Promise((r) => setTimeout(r, 0));
+  it('hydrate NON tocca le chiavi del dispositivo — e ne cancella le copie stale dal PC', async () => {
+    // Il telefono ha le SUE scelte; il PC ne ha altre (scritte da una vecchia versione)
+    LS.setItem('mh-pref-accent', '"ocean"');
+    LS.setItem('mh-pref-libsort', '"title"');
+    state.db.set('mh-pref-accent', JSON.stringify('sunset'));
+    state.db.set('mh-pref-libsort', JSON.stringify('recent'));
+    state.db.set('mh-pref-cdqueue', JSON.stringify([9])); // condivisa: questa sì che vale
 
-    state.online = true;
     await persist.syncPrefs();
-    // Push prima → il PC ora ha 'on' e il locale resta 'on'
-    expect(JSON.parse(state.db.get('mh-pref-motion')!)).toBe('on');
-    expect(JSON.parse(LS.getItem('mh-pref-motion')!)).toBe('on');
+
+    // Le scelte del dispositivo non sono state sovrascritte da quelle del PC
+    expect(JSON.parse(LS.getItem('mh-pref-accent')!)).toBe('ocean');
+    expect(JSON.parse(LS.getItem('mh-pref-libsort')!)).toBe('title');
+    // La tracklist CD condivisa invece si idrata
+    expect(JSON.parse(LS.getItem('mh-pref-cdqueue')!)).toEqual([9]);
+    // Le copie stale non condivise sono state spazzate dal DB
+    expect(state.db.has('mh-pref-accent')).toBe(false);
+    expect(state.db.has('mh-pref-libsort')).toBe(false);
+    expect(state.db.has('mh-pref-cdqueue')).toBe(true);
   });
 
-  it('una chiave rifiutata dal server non affama le altre (no break)', async () => {
+  it('hydrate NON sovrascrive una condivisa sporca col valore vecchio del PC', async () => {
+    state.db.set('mh-pref-cdqueue', JSON.stringify([1])); // PC: [1]
     state.online = false;
-    persist.savePref('mh-pref-a', 1);
-    persist.savePref('mh-pref-bad', 2);
-    persist.savePref('mh-pref-c', 3);
+    persist.savePref('mh-pref-cdqueue', [2]); // noi: [2], mai arrivata
     await new Promise((r) => setTimeout(r, 0));
 
     state.online = true;
-    state.failSet.add('mh-pref-bad'); // il server rifiuta questa chiave
+    await persist.syncPrefs();
+    // Push prima → il PC ora ha [2] e il locale resta [2]
+    expect(JSON.parse(state.db.get('mh-pref-cdqueue')!)).toEqual([2]);
+    expect(JSON.parse(LS.getItem('mh-pref-cdqueue')!)).toEqual([2]);
+  });
+
+  it('una condivisa rifiutata dal server resta dirty; le non-condivise si liberano', async () => {
+    // Dirty list cucita a mano (savePref non sporca più le non-condivise)
+    LS.setItem(DIRTY, JSON.stringify(['mh-pref-cdqueue', 'mh-pref-x']));
+    LS.setItem('mh-pref-cdqueue', '[5]');
+    LS.setItem('mh-pref-x', '3');
+
+    state.failSet.add('mh-pref-cdqueue'); // il server rifiuta la condivisa
     await persist.syncPrefs();
 
-    // a e c sono partite comunque; bad resta dirty per il prossimo giro
-    expect(state.db.has('mh-pref-a')).toBe(true);
-    expect(state.db.has('mh-pref-c')).toBe(true);
-    expect(dirtyList()).toEqual(['mh-pref-bad']);
-    // Ma il valore locale di bad non è stato perso
-    expect(JSON.parse(LS.getItem('mh-pref-bad')!)).toBe(2);
+    // cdqueue non è partita e resta dirty per il prossimo giro;
+    // x (non condivisa) si è dis-dirty-ata senza push
+    expect(state.db.has('mh-pref-cdqueue')).toBe(false);
+    expect(state.db.has('mh-pref-x')).toBe(false);
+    expect(dirtyList()).toEqual(['mh-pref-cdqueue']);
+    // Ma i valori locali non sono stati persi
+    expect(JSON.parse(LS.getItem('mh-pref-cdqueue')!)).toEqual([5]);
+    expect(JSON.parse(LS.getItem('mh-pref-x')!)).toBe(3);
   });
 });
 
 describe('cambio profilo — i valori offline sopravvivono', () => {
   it('archiveDirtyValues + restore al rientro', async () => {
     state.online = false;
-    persist.savePref('mh-pref-volume', 0.9); // u1, mai partito
+    persist.savePref('mh-pref-cdqueue', [8]); // u1, mai partito
     await new Promise((r) => setTimeout(r, 0));
 
     persist.archiveDirtyValues();            // parcheggia sotto mh-dval:u1:
-    persist.clearLocalPrefs();               // svuota la vista (chiavi logiche)
-    expect(LS.getItem('mh-pref-volume')).toBeNull();
-    expect(dirtyList()).toContain('mh-pref-volume'); // dirty list resta
+    persist.clearLocalPrefs();               // svuota la vista (chiavi condivise)
+    expect(LS.getItem('mh-pref-cdqueue')).toBeNull();
+    expect(dirtyList()).toContain('mh-pref-cdqueue'); // dirty list resta
 
     // Rientro di u1: il valore archiviato torna e viene spinto al PC
     state.online = true;
     await persist.syncPrefs();
-    expect(JSON.parse(LS.getItem('mh-pref-volume')!)).toBe(0.9);
-    expect(JSON.parse(state.db.get('mh-pref-volume')!)).toBe(0.9);
-    expect(LS.getItem('mh-dval:u1:mh-pref-volume')).toBeNull();
+    expect(JSON.parse(LS.getItem('mh-pref-cdqueue')!)).toEqual([8]);
+    expect(JSON.parse(state.db.get('mh-pref-cdqueue')!)).toEqual([8]);
+    expect(LS.getItem('mh-dval:u1:mh-pref-cdqueue')).toBeNull();
   });
 
-  it('clearLocalPrefs non tocca le dirty list degli altri profili', () => {
+  it('clearLocalPrefs toglie solo le condivise: dispositivo e dirty altrui restano', () => {
     LS.setItem('mh-pref-dirty:u2', JSON.stringify(['mh-pref-x']));
-    LS.setItem('mh-pref-volume', '0.4');
+    LS.setItem('mh-pref-cdqueue', '[1]');
+    LS.setItem('mh-pref-libsort', '"title"'); // pref del dispositivo: sopravvive
     persist.clearLocalPrefs();
-    expect(LS.getItem('mh-pref-volume')).toBeNull();
+    expect(LS.getItem('mh-pref-cdqueue')).toBeNull();
+    expect(JSON.parse(LS.getItem('mh-pref-libsort')!)).toBe('title');
     expect(LS.getItem('mh-pref-dirty:u2')).not.toBeNull();
   });
 });
