@@ -278,8 +278,9 @@ export interface StationDef {
   id: string;
   name: string;
   desc: string;
-  group: 'per-te' | 'mood' | 'genere' | 'decennio' | 'news';
+  group: 'per-te' | 'mood' | 'genere' | 'sottogenere' | 'decennio' | 'news';
   query?: string;       // stazioni generiche: risolte con ricerca YT Music
+  genre?: string;       // tag Last.fm del tema: seeda il catalogo (top artisti/tracce) oltre la query
   grad: string;         // gradiente tailwind della card
 }
 
@@ -297,12 +298,48 @@ export const STATIONS: StationDef[] = [
   { id: 'romantico', name: 'Romantico', desc: 'Ballad e canzoni d\'amore', group: 'mood', query: 'love songs romantic ballads', grad: 'from-pink-400 to-rose-700' },
   { id: 'sera', name: 'Sera', desc: 'Lounge, jazz e ritmi lenti', group: 'mood', query: 'evening lounge jazz downtempo', grad: 'from-amber-700 to-stone-900' },
   // Generi
-  { id: 'italiana', name: 'Italiana', desc: 'Cantautori e pop italiano', group: 'genere', query: 'canzoni italiane belle cantautori', grad: 'from-green-500 to-emerald-800' },
-  { id: 'rap-it', name: 'Rap italiano', desc: 'La scena rap e trap di casa nostra', group: 'genere', query: 'rap italiano hits', grad: 'from-zinc-500 to-neutral-800' },
-  { id: 'rock', name: 'Rock', desc: 'Chitarre, classici e new wave', group: 'genere', query: 'rock classics hits', grad: 'from-red-600 to-stone-800' },
-  { id: 'dance', name: 'Dance', desc: 'EDM, club e mani al cielo', group: 'genere', query: 'edm dance club hits', grad: 'from-pink-500 to-orange-600' },
-  { id: 'indie-it', name: 'Indie italiano', desc: 'L\'altra faccia del pop italiano', group: 'genere', query: 'indie italiano', grad: 'from-lime-500 to-green-800' },
-  { id: 'latina', name: 'Latina', desc: 'Reggaeton e ritmi latini', group: 'genere', query: 'latin reggaeton hits', grad: 'from-yellow-500 to-orange-700' },
+  { id: 'italiana', name: 'Italiana', desc: 'Cantautori e pop italiano', group: 'genere', query: 'canzoni italiane belle cantautori', genre: 'italian', grad: 'from-green-500 to-emerald-800' },
+  { id: 'rap-it', name: 'Rap italiano', desc: 'La scena rap e trap di casa nostra', group: 'genere', query: 'rap italiano hits', genre: 'italian hip hop', grad: 'from-zinc-500 to-neutral-800' },
+  { id: 'rock', name: 'Rock', desc: 'Chitarre, classici e new wave', group: 'genere', query: 'rock classics hits', genre: 'rock', grad: 'from-red-600 to-stone-800' },
+  { id: 'dance', name: 'Dance', desc: 'EDM, club e mani al cielo', group: 'genere', query: 'edm dance club hits', genre: 'edm', grad: 'from-pink-500 to-orange-600' },
+  { id: 'indie-it', name: 'Indie italiano', desc: 'L\'altra faccia del pop italiano', group: 'genere', query: 'indie italiano', genre: 'italian indie', grad: 'from-lime-500 to-green-800' },
+  { id: 'latina', name: 'Latina', desc: 'Reggaeton e ritmi latini', group: 'genere', query: 'latin reggaeton hits', genre: 'latin', grad: 'from-yellow-500 to-orange-700' },
+  { id: 'pop', name: 'Pop', desc: 'Le hit pop senza tempo, Italia e mondo', group: 'genere', query: 'pop hits', genre: 'pop', grad: 'from-pink-400 to-rose-600' },
+  { id: 'pop-it', name: 'Pop italiano', desc: 'Il pop di casa nostra, classici e nuovi', group: 'genere', query: 'pop italiano hits', genre: 'italian pop', grad: 'from-emerald-400 to-teal-700' },
+  { id: 'cantautori', name: 'Cantautori', desc: 'La scuola dei grandi autori italiani', group: 'genere', query: 'cantautori italiani', genre: 'singer-songwriter', grad: 'from-amber-600 to-yellow-800' },
+  { id: 'hip-hop', name: 'Hip hop', desc: 'Dalle origini ai giganti di oggi', group: 'genere', query: 'hip hop hits', genre: 'hip hop', grad: 'from-neutral-500 to-zinc-800' },
+  { id: 'rnb', name: 'R&B', desc: 'Voci e groove morbidi', group: 'genere', query: 'rnb r&b hits', genre: 'rnb', grad: 'from-purple-500 to-violet-800' },
+  { id: 'soul', name: 'Soul', desc: 'Motown, gospel e cuore', group: 'genere', query: 'soul hits motown', genre: 'soul', grad: 'from-orange-500 to-red-700' },
+  { id: 'funk', name: 'Funk', desc: 'Bassline e groove senza freni', group: 'genere', query: 'funk hits', genre: 'funk', grad: 'from-fuchsia-500 to-purple-700' },
+  { id: 'metal', name: 'Metal', desc: 'Heavy, thrash e potenza', group: 'genere', query: 'metal heavy metal hits', genre: 'metal', grad: 'from-stone-600 to-neutral-900' },
+  { id: 'punk', name: 'Punk', desc: 'Tre accordi e tanta rabbia', group: 'genere', query: 'punk rock hits', genre: 'punk', grad: 'from-rose-600 to-red-800' },
+  { id: 'alternative', name: 'Alternative', desc: 'Fuori dal mainstream, dentro il cuore', group: 'genere', query: 'alternative rock hits', genre: 'alternative', grad: 'from-teal-600 to-cyan-800' },
+  { id: 'jazz', name: 'Jazz', desc: 'Standard, swing e improvvisazione', group: 'genere', query: 'jazz classics standards', genre: 'jazz', grad: 'from-blue-600 to-indigo-800' },
+  { id: 'blues', name: 'Blues', desc: 'Dodici battute e l\'anima', group: 'genere', query: 'blues classics', genre: 'blues', grad: 'from-indigo-700 to-slate-900' },
+  { id: 'folk', name: 'Folk', desc: 'Chitarre acustiche e radici', group: 'genere', query: 'folk songs acoustic', genre: 'folk', grad: 'from-amber-500 to-orange-700' },
+  { id: 'country', name: 'Country', desc: 'Storie da Nashville e oltre', group: 'genere', query: 'country hits', genre: 'country', grad: 'from-yellow-600 to-amber-800' },
+  { id: 'reggae', name: 'Reggae', desc: 'Giamaica e dintorni', group: 'genere', query: 'reggae hits', genre: 'reggae', grad: 'from-green-600 to-lime-800' },
+  { id: 'classica', name: 'Classica', desc: 'I grandi capolavori orchestrali', group: 'genere', query: 'classical music masterpieces', genre: 'classical', grad: 'from-slate-500 to-stone-700' },
+  { id: 'techno', name: 'Techno', desc: 'Il battito delle quattro del mattino', group: 'genere', query: 'techno hits', genre: 'techno', grad: 'from-cyan-600 to-blue-800' },
+  { id: 'house', name: 'House', desc: 'Chicago, ibiza e piano roll', group: 'genere', query: 'house music hits', genre: 'house', grad: 'from-violet-500 to-fuchsia-700' },
+  { id: 'soundtrack', name: 'Colonne sonore', desc: 'Le musiche dei film che ami', group: 'genere', query: 'movie soundtrack hits', genre: 'soundtrack', grad: 'from-sky-500 to-blue-700' },
+  // Sottogeneri
+  { id: 'trap-it', name: 'Trap italiana', desc: 'La nuova scuola italiana', group: 'sottogenere', query: 'trap italiano', genre: 'italian trap', grad: 'from-neutral-600 to-stone-800' },
+  { id: 'trap', name: 'Trap', desc: '808 e hi-hat dal mondo', group: 'sottogenere', query: 'trap hits', genre: 'trap', grad: 'from-zinc-600 to-neutral-900' },
+  { id: 'drill', name: 'Drill', desc: 'La scena più dura del momento', group: 'sottogenere', query: 'drill rap hits', genre: 'drill', grad: 'from-gray-600 to-zinc-900' },
+  { id: 'hard-rock', name: 'Hard rock', desc: 'Riff pesanti e assoli', group: 'sottogenere', query: 'hard rock hits', genre: 'hard rock', grad: 'from-red-700 to-stone-900' },
+  { id: 'grunge', name: 'Grunge', desc: 'Seattle e dintorni, anni \'90 veri', group: 'sottogenere', query: 'grunge hits', genre: 'grunge', grad: 'from-emerald-700 to-stone-800' },
+  { id: 'new-wave', name: 'New wave', desc: 'Synth e oscurità anni \'80', group: 'sottogenere', query: 'new wave hits 80s', genre: 'new wave', grad: 'from-purple-600 to-indigo-800' },
+  { id: 'pop-punk', name: 'Pop punk', desc: 'Melodie veloci e chitarre distorte', group: 'sottogenere', query: 'pop punk hits', genre: 'pop punk', grad: 'from-orange-500 to-rose-700' },
+  { id: 'emo', name: 'Emo', desc: 'Cuori infranti in distorsione', group: 'sottogenere', query: 'emo hits', genre: 'emo', grad: 'from-fuchsia-600 to-purple-900' },
+  { id: 'disco', name: 'Disco', desc: 'Pista da ballo anni \'70-\'80', group: 'sottogenere', query: 'disco hits', genre: 'disco', grad: 'from-yellow-400 to-pink-600' },
+  { id: 'synthwave', name: 'Synthwave', desc: 'Notte al neon e motori', group: 'sottogenere', query: 'synthwave retrowave', genre: 'synthwave', grad: 'from-violet-600 to-fuchsia-800' },
+  { id: 'lofi', name: 'Lo-fi', desc: 'Beat rilassati per studio e notte', group: 'sottogenere', query: 'lofi beats chill', genre: 'lo-fi', grad: 'from-teal-400 to-emerald-700' },
+  { id: 'dnb', name: 'Drum & bass', desc: 'Bassline a 174 bpm', group: 'sottogenere', query: 'drum and bass dnb', genre: 'drum and bass', grad: 'from-lime-600 to-green-900' },
+  { id: 'bossa', name: 'Bossa nova', desc: 'Rio, samba e raffinatezza', group: 'sottogenere', query: 'bossa nova classics', genre: 'bossa nova', grad: 'from-amber-400 to-emerald-700' },
+  { id: 'kpop', name: 'K-pop', desc: 'La macchina pop coreana', group: 'sottogenere', query: 'k-pop hits', genre: 'k-pop', grad: 'from-pink-500 to-violet-700' },
+  { id: 'afrobeat', name: 'Afrobeats', desc: 'Lagos, Accra e il ritmo che sale', group: 'sottogenere', query: 'afrobeats hits', genre: 'afrobeats', grad: 'from-orange-600 to-amber-800' },
+  { id: 'neomelodica', name: 'Neomelodica', desc: 'Le canzoni di Napoli e del sud', group: 'sottogenere', query: 'neomelodica napoletana', genre: 'neomelodica', grad: 'from-cyan-500 to-teal-800' },
   // Decenni
   { id: 'anni70', name: 'Anni \'70', desc: 'I classici che non muoiono mai', group: 'decennio', query: 'anni 70 hits 70s classics', grad: 'from-amber-600 to-yellow-800' },
   { id: 'anni80', name: 'Anni \'80', desc: 'Synth, pop e spalline', group: 'decennio', query: 'anni 80 hits 80s', grad: 'from-pink-500 to-rose-800' },

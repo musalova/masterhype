@@ -16,9 +16,14 @@ describe('stazioni', () => {
       else expect(s.query).toBeTruthy();
     }
   });
-  it('coprono mood, genere, decennio e novità', () => {
+  it('le stazioni di genere hanno anche il tag Last.fm per il seeding', () => {
+    for (const s of STATIONS) {
+      if (s.group === 'genere' || s.group === 'sottogenere') expect(s.genre).toBeTruthy();
+    }
+  });
+  it('coprono mood, genere, sottogenere, decennio e novità', () => {
     const groups = new Set(STATIONS.map((s) => s.group));
-    for (const g of ['per-te', 'mood', 'genere', 'decennio', 'news']) expect(groups.has(g as never)).toBe(true);
+    for (const g of ['per-te', 'mood', 'genere', 'sottogenere', 'decennio', 'news']) expect(groups.has(g as never)).toBe(true);
   });
   it('tutte hanno nome, descrizione e gradiente', () => {
     for (const s of STATIONS) {

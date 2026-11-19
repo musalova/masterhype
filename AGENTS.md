@@ -775,7 +775,20 @@
   DISTRIBUITO; `radioForGenre` boosta gli artisti del tag già nei gusti;
   `stationNovita` usa rank chart + tag/co-occorrenze (funziona anche senza
   chiave Last.fm); le stazioni generiche hanno un "tilt" (`STATION_TAGS`):
-  artisti del profilo coerenti col tema entrano in scaletta.
+  artisti del profilo coerenti col tema entrano in scaletta. Le stazioni con
+  `StationDef.genre` (gruppi `genere`/`sottogenere` — trap, grunge, bossa nova,
+  jazz…) seminano il pool da `lastfmTagTopArtists`/`lastfmTagTopTracks` del tag
+  + top Deezer dei migliori (fonti `tag`/`tagtracks`, bonus in scoring): la sola
+  query YT "<genere> hits" restituiva hit fuori tema. Offline `offlineStation`
+  usa `genrePool` (propri brani del genere + upNext + query curata).
+- **Mai 'Sconosciuto' in scaletta**: `addCand` e `stationFilterCtx`
+  (recommend.ts) e `tasteOrder` (offlineRec.ts) scartano candidati con artista
+  `norm()==='sconosciuto'` — una riga senza artista reale appare rotta.
+  In `ytparse.toTrack`, quando il byline manca, `splitTitleArtist` recupera
+  "Artista - Titolo" dal titolo video (guard su lato artista ≤45ch non-metadato
+  e lato titolo che non sia suffisso di versione: "- Remastered"/"- Live"
+  NON si splittano) e i byline "- Topic" vengono strippati — test in
+  `tests/ytparse.test.ts`.
 - `rec:next` = continuazione radio col contesto: `stationCtx` in PlayerState
   ('station:<id>' | 'radio:artist:<n>' | 'radio:genre:<tag>', settato da
   playStation/startStation/startRadio, azzerato da un play non-stazione) →

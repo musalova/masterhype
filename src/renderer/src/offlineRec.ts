@@ -116,7 +116,7 @@ function tasteOrder(list: TrackRef[]): TrackRef[] {
   const t = tasteSnapshot();
   const n = Math.max(1, list.length);
   return dedupe(list)
-    .filter((x) => !blockedLocal(t, x.artist) && !t.neg.has(trackBaseKey(x.artist, x.title)))
+    .filter((x) => normText(x.artist) !== 'sconosciuto' && !blockedLocal(t, x.artist) && !t.neg.has(trackBaseKey(x.artist, x.title)))
     .map((x, i) => ({ x, s: ((t.w.get(normText(x.artist)) ?? 0) / t.max) * 1.2 + (1 - i / n) * 0.3 }))
     .sort((a, b) => b.s - a.s)
     .map((x) => x.x);
@@ -220,13 +220,13 @@ function genreSeedTracks(genre: string, library: LibraryTrack[]): LibraryTrack[]
 }
 
 // Pool "genere X": tuoi brani del genere + correlati upNext sui migliori +
-// una quota di "${genre} hits" per la scoperta. Se la libreria non copre il
-// genere (tag Last.fm senza file locali) resta solo la ricerca — tasteOrder
-// comunque filtra e ordina sui gusti.
-async function genrePool(genre: string, library: LibraryTrack[], remoteLikes: RemoteLike[]): Promise<TrackRef[]> {
+// una quota di ricerca "${genre} hits" (o la query curata della stazione) per
+// la scoperta. Se la libreria non copre il genere (tag senza file locali)
+// resta solo la ricerca — tasteOrder comunque filtra e ordina sui gusti.
+async function genrePool(genre: string, library: LibraryTrack[], remoteLikes: RemoteLike[], query?: string): Promise<TrackRef[]> {
   const own = genreSeedTracks(genre, library).slice(0, 10).map(toRef);
   const seeds = own.length ? own : likedTracks(library, remoteLikes).slice(0, 4);
-  const [ups, hits] = await Promise.all([upNextPool(seeds, 3), searchPool(`${genre} hits`)]);
+  const [ups, hits] = await Promise.all([upNextPool(seeds, 3), searchPool(query ?? `${genre} hits`)]);
   return [...own, ...ups, ...hits.slice(0, 15)];
 }
 
@@ -293,6 +293,9 @@ export async function offlineAutoplaylist(id: string, library: LibraryTrack[], r
 // ---- stazioni / radio ----
 export async function offlineStation(id: string, library: LibraryTrack[], remoteLikes: RemoteLike[]): Promise<TrackRef[]> {
   const def = STATIONS.find((s) => s.id === id);
+  // Stazione di genere: i tuoi brani di quel genere + correlati + catalogo,
+  // non solo la query nuda (parità col seed Last.fm del PC).
+  if (def?.genre) return tasteOrder(await genrePool(def.genre, library, remoteLikes, def.query)).slice(0, 40);
   if (def?.query) return tasteOrder(await searchPool(def.query)).slice(0, 40);
 
   // stazioni personali: equivalenti locali

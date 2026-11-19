@@ -1,4 +1,8 @@
 {
+  "0.5.15": [
+    "Stazioni molto più ricche: 37 nuove tra generi e sottogeneri (jazz, classica, trap, grunge, synthwave, bossa nova e tanti altri), con suggerimenti molto più vicini al tema e ai tuoi gusti",
+    "Niente più 'artista sconosciuto' nelle stazioni: il lettore ora recupera il nome dell'artista anche quando YouTube non lo fornisce"
+  ],
   "0.5.14": [
     "I suggerimenti del telefono ora funzionano anche senza PC: niente più artisti sconosciuti o generi inventati, propone musica vicina ai tuoi gusti",
     "I brani sul telefono non si interrompono più a catena: se la rete fa i capricci, il lettore ripara o salta una sola volta e si ferma invece di saltare tutto",

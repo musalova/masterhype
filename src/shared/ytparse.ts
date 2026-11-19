@@ -114,12 +114,29 @@ function videoIdOf(item: any): string | null {
 // (youtubei.js non riconosce il tipo, ma sotto c'è comunque un video riproducibile)
 const PLAYABLE = new Set(['song', 'video', 'episode']);
 
+// "Artista - Titolo" nel titolo del video: quando il byline manca del tutto
+// (item senza colonna autore, uploader fan/canale) il titolo porta spesso la
+// coppia. Anti-falso-positivo: il lato artista ≤45 char, non inizia con cifre
+// e non contiene parole da metadato ("official video", "live", "remaster"…).
+const TITLE_ARTIST_RE = /^(.{2,45}?)\s+[-–—]\s+(.{2,})$/;
+const TITLE_ARTIST_BAD = /official|video|audio|lyric|karaoke|\blive\b|remaster|full album|\bhd\b|\b4k\b|prod\.|featuring/i;
+// Il lato DESTRO non deve sembrare un suffisso di versione: "Song - Remastered"
+// non è "Artista - Titolo", è un titolo con variante.
+const TITLE_RIGHT_BAD = /^(remaster(ed)?|remix(ed)?|live|acoustic|instrumental|slowed|sped|reverb|edit(ion|ed)?|extended|deluxe|cover|karaoke|version|from the|ost|soundtrack|demo|radio edit|mono|stereo|sessions?|remake|re-record(ed)?)/i;
+function splitTitleArtist(title: string): { artist: string; title: string } | null {
+  const m = TITLE_ARTIST_RE.exec(title);
+  if (!m) return null;
+  const a = m[1].trim();
+  if (TITLE_ARTIST_BAD.test(a) || /^\d/.test(a) || TITLE_RIGHT_BAD.test(m[2].trim())) return null;
+  return { artist: a, title: m[2].trim() };
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toTrack(item: any, source: TrackRef['source'] = 'ytmusic'): TrackRef | null {
   const id = videoIdOf(item);
   const type = item.item_type;
   if (type && !PLAYABLE.has(type) && !(type === 'unknown' && id)) return null;
-  const title = text(item.title);
+  let title = text(item.title);
   if (!id || !title) return null;
   const authors = item.artists ?? item.authors ?? [];
   let artist = Array.isArray(authors) && authors.length
@@ -128,6 +145,12 @@ export function toTrack(item: any, source: TrackRef['source'] = 'ytmusic'): Trac
       || artistFromColumns(item)
       || '';
   if (/^n\/?a$/i.test(artist.trim())) artist = '';
+  // Canali Topic: il byline porta "Nome Artista - Topic", l'artista vero è il prefisso.
+  artist = artist.replace(/\s+-\s+topic$/i, '').trim();
+  if (!artist) {
+    const split = splitTitleArtist(title);
+    if (split) { artist = split.artist; title = split.title; }
+  }
   return {
     videoId: id,
     title,

@@ -5,7 +5,7 @@ import { contextBoosts, cooccurring, trackAffinity } from './engine';
 import { getSettings } from '../settings';
 import { getDb } from '../db';
 import { mapLimit } from './util';
-import type { TrackRef, SuggestedTrack, AssistantRequest, AssistantResult } from '../../shared/types';
+import type { TrackRef, SuggestedTrack, AssistantRequest, AssistantResult, StationDef } from '../../shared/types';
 import { STATIONS } from '../../shared/types';
 import { normText as norm, normTag, trackKey as key, trackBaseKey as baseKey } from '../../shared/taste';
 import { parsePrompt } from './promptParse';
@@ -85,7 +85,9 @@ const tasteMap = (rows: { value: string; weight: number }[], n: (s: string) => s
 };
 
 function addCand(map: Map<string, Candidate>, title: string, artist: string, source: string, extra?: Partial<Candidate>): void {
-  if (!title || !artist) return;
+  // Senza artista reale il candidato non è punteggiabile (né gusto né tag) e
+  // in scaletta si vede come "Sconosciuto" — meglio non averlo.
+  if (!title || !artist || norm(artist) === 'sconosciuto') return;
   const k = key(artist, title);
   const c = map.get(k);
   if (c) {
@@ -543,6 +545,7 @@ const candOk = (t: TasteCtx, c: Candidate): boolean =>
 // Ciò che hai suonato di recente esce, così ogni apertura propone novità.
 function stationFilterCtx(list: TrackRef[], t: TasteCtx): TrackRef[] {
   return list.filter((x) =>
+    norm(x.artist) !== 'sconosciuto' && // senza artista reale la riga appare rotta
     !artistBlocked(t, x.artist) &&
     !t.negKeys.has(baseKey(x.artist, x.title)) &&
     !t.recentKeys.has(baseKey(x.artist, x.title)));
@@ -724,6 +727,41 @@ const STATION_TAGS: Record<string, string[]> = {
   dance: ['edm', 'dance', 'electronic', 'house', 'club'],
   'indie-it': ['indie', 'indie pop', 'italian indie', 'alternative'],
   latina: ['latin', 'reggaeton', 'latin pop'],
+  pop: ['pop', 'dance pop', 'electropop'],
+  'pop-it': ['italian pop', 'pop italiano', 'italian'],
+  cantautori: ['singer-songwriter', 'cantautori', 'italian'],
+  'hip-hop': ['hip hop', 'rap', 'trap'],
+  rnb: ['rnb', 'soul', 'contemporary r&b'],
+  soul: ['soul', 'motown', 'gospel'],
+  funk: ['funk', 'soul', 'disco'],
+  metal: ['metal', 'heavy metal', 'thrash metal', 'hard rock'],
+  punk: ['punk', 'punk rock', 'hardcore punk'],
+  alternative: ['alternative', 'alternative rock', 'indie rock', 'indie'],
+  jazz: ['jazz', 'swing', 'bebop', 'smooth jazz'],
+  blues: ['blues', 'blues rock', 'delta blues'],
+  folk: ['folk', 'acoustic', 'singer-songwriter'],
+  country: ['country', 'americana', 'country rock'],
+  reggae: ['reggae', 'dub', 'ska', 'roots reggae'],
+  classica: ['classical', 'orchestral', 'opera', 'symphony'],
+  techno: ['techno', 'electronic', 'minimal techno'],
+  house: ['house', 'deep house', 'dance', 'electronic'],
+  soundtrack: ['soundtrack', 'score', 'film score', 'orchestral'],
+  'trap-it': ['italian trap', 'trap', 'italian hip hop'],
+  trap: ['trap', 'hip hop', 'rap'],
+  drill: ['drill', 'uk drill', 'trap'],
+  'hard-rock': ['hard rock', 'heavy metal', 'classic rock'],
+  grunge: ['grunge', 'alternative rock', '90s'],
+  'new-wave': ['new wave', 'post-punk', '80s', 'synthpop'],
+  'pop-punk': ['pop punk', 'punk', 'skate punk'],
+  emo: ['emo', 'pop punk', 'post-hardcore'],
+  disco: ['disco', 'funk', 'dance', '70s'],
+  synthwave: ['synthwave', 'retrowave', 'synthpop', 'electronic'],
+  lofi: ['lo-fi', 'chillhop', 'chill', 'downtempo'],
+  dnb: ['drum and bass', 'dnb', 'jungle', 'electronic'],
+  bossa: ['bossa nova', 'samba', 'mpb', 'brazilian'],
+  kpop: ['k-pop', 'kpop', 'korean pop'],
+  afrobeat: ['afrobeats', 'afrobeat', 'afropop'],
+  neomelodica: ['neomelodica', 'napoletana', 'italian'],
   anni70: ['70s'], anni80: ['80s'], anni90: ['90s'], anni2000: ['2000s'], anni2010: ['2010s'],
 };
 
@@ -731,12 +769,33 @@ const STATION_TAGS: Record<string, string[]> = {
 // base, il profilo decide l'ordine — e gli artisti tuoi coerenti col tema
 // entrano direttamente in scaletta. Stessa card, scaletta diversa per ogni
 // utente: la stazione si avvicina ai gusti senza tradire il tema.
-async function stationQuery(u: number, stationId: string, query: string): Promise<TrackRef[]> {
+// Se la stazione dichiara un tag genere (def.genre) il pool si arricchisce
+// coi top artisti/tracce del tag su Last.fm + Deezer — la query YT da sola
+// ("<genere> hits") restituiva hit generiche fuori tema.
+async function stationQuery(u: number, def: StationDef): Promise<TrackRef[]> {
   const t = tasteCtx(u);
   const map = new Map<string, Candidate>();
-  const res = await searchSongs(query).catch(() => [] as TrackRef[]);
+  const wantTags = STATION_TAGS[def.id] ?? (def.genre ? [def.genre] : undefined);
+  // Catalogo Last.fm del genere: artisti e brani di punta (semi di qualità).
+  // Artisti del tag ordinati per rilevanza+gusti → i loro top Deezer entrano
+  // come 'tag' e concorrono allo scoring coi risultati della query.
+  if (def.genre) {
+    const [tagArtists, tagTracks] = await Promise.all([
+      lastfmTagTopArtists(def.genre).catch(() => [] as string[]),
+      lastfmTagTopTracks(def.genre).catch(() => [] as { title: string; artist: string }[]),
+    ]);
+    tagTracks.slice(0, 12).forEach((tr, i) => addCand(map, tr.title, tr.artist, 'tagtracks', { rank: i }));
+    const ranked = tagArtists.slice(0, 16)
+      .map((a, i) => ({ a, s: 1 / (1 + i) + Math.max(0, (t.artistW.get(norm(a)) ?? 0) / t.maxA) }))
+      .sort((x, y) => y.s - x.s).slice(0, 8);
+    await mapLimit(ranked, 4, async ({ a, s }) => {
+      for (const tr of (await deezerArtistTop(a).catch(() => [])).slice(0, 2)) {
+        addCand(map, tr.title, tr.artist, 'tag', { sim: s });
+      }
+    });
+  }
+  const res = await searchSongs(def.query ?? `${def.genre} hits`).catch(() => [] as TrackRef[]);
   res.slice(0, 30).forEach((r, i) => addCand(map, r.title, r.artist, 'query', { videoId: r.videoId, thumbnail: r.thumbnail, durationS: r.durationS, rank: i }));
-  const wantTags = STATION_TAGS[stationId];
   if (wantTags?.length) {
     // Artisti del profilo i cui tag collimano col tema → i loro top brani
     // entrano come 'tilt' (scoring + dedup li mescolano nel ranking).
@@ -761,6 +820,7 @@ async function stationQuery(u: number, stationId: string, query: string): Promis
     const s = (c.rank != null ? 1 - c.rank / 30 : 0)
       + Math.max(-1, Math.min(1, (t.artistW.get(a) ?? 0) / t.maxA)) * 1.1
       + (c.sources.has('tilt') ? 0.9 : 0)
+      + (c.sources.has('tag') || c.sources.has('tagtracks') ? 0.8 : 0)
       + tagAffinity(t, tags.get(a) ?? []) * 0.7
       + trackAff(t, c.artist, c.title) * 0.4;
     return { c, s };
@@ -798,8 +858,8 @@ export async function stationTracks(u: number, stationId: string): Promise<Track
     case 'classifiche': return stationFilter(await charts(getSettings().country).catch(() => [] as TrackRef[]), u);
     default: {
       const def = STATIONS.find((s) => s.id === stationId);
-      if (!def?.query) return stationForYou(u);
-      return stationQuery(u, def.id, def.query);
+      if (!def || (!def.query && !def.genre)) return stationForYou(u);
+      return stationQuery(u, def);
     }
   }
 }

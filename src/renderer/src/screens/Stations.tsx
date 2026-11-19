@@ -14,7 +14,8 @@ import { pcGone } from '../remote';
 const GROUPS: { id: StationDef['group']; title: string; sub: string }[] = [
   { id: 'per-te', title: 'Fatte per te', sub: 'Cucite sui tuoi gusti: si affinano a ogni ascolto, like e skip' },
   { id: 'mood', title: 'Per mood', sub: 'La musica giusta per il momento' },
-  { id: 'genere', title: 'Per genere', sub: 'Dalla canzone italiana al rap, dal rock alla latina' },
+  { id: 'genere', title: 'Per genere', sub: 'Dalla canzone italiana al rap, dal rock alla classica' },
+  { id: 'sottogenere', title: 'Sottogeneri', sub: 'Trap, grunge, synthwave, bossa nova: stazioni di nicchia precise' },
   { id: 'decennio', title: 'Per decennio', sub: 'Un tuffo negli anni che ami' },
   { id: 'news', title: 'Novità', sub: 'Le hit del momento, sempre aggiornate' },
 ];
