@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { sanitizeRemoteSettings, safeUploadName, redactRemoteSettings, REDACTED } from '../src/main/remoteGuards';
+import { AUDIO_EXTS } from '../src/shared/types';
 import { normalizeFeed, feedApkManifest } from '../src/shared/updateFeed';
 
 // Un client col token (telefono, browser sulla LAN) non deve poter cambiare
@@ -63,6 +64,12 @@ describe('nome file upload dal telefono', () => {
     expect(safeUploadName('..mp3')).toBeNull();
     expect(safeUploadName('virus.exe')).toBeNull();
     expect(safeUploadName(42)).toBeNull();
+  });
+  it('parità upload↔import: OGNI estensione condivisa passa il gate', () => {
+    // L'import (downloader) usa la stessa AUDIO_EXTS: un'ext accettata qui ma
+    // scartata là farebbe caricare 400MB per un r=0 silenzioso (bug .webm).
+    for (const e of AUDIO_EXTS) expect(safeUploadName(`brano${e}`)).toBe(`brano${e}`);
+    expect(safeUploadName('Brano.WEBM')).toBe('Brano.WEBM'); // case-insensitive
   });
 });
 

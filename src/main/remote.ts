@@ -1,13 +1,13 @@
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
 import { networkInterfaces } from 'node:os';
-import { existsSync, statSync, createReadStream, createWriteStream, mkdirSync, unlinkSync } from 'node:fs';
+import { existsSync, statSync, createReadStream, createWriteStream, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join, extname, normalize, dirname } from 'node:path';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { app, powerSaveBlocker } from 'electron';
 import { handlers } from './handlers';
 import { getSettings } from './settings';
 import { getTrack } from './services/library';
-import { userExists } from './services/users';
+import { listUsers, userExists } from './services/users';
 import { trackUsage } from './services/engine';
 import * as devices from './services/devices';
 import { report } from './services/telemetry';
@@ -157,11 +157,13 @@ function authThrottled(req: IncomingMessage): boolean {
 // Profilo dichiarato dal client via X-MH-User (o ?user= per SSE/EventSource):
 // vale SOLO per il token condiviso admin — con un device token il profilo è
 // il binding del dispositivo e l'header viene ignorato. Header assente →
-// profilo legacy 1; id inesistente/non numerico → null → 401.
+// primo profilo esistente (id=1 è eliminabile: il "legacy 1" fisso poteva
+// puntare a un utente fantasma — stesso ripiego di desktopUser); id
+// inesistente/non numerico → null → 401.
 function reqUser(req: IncomingMessage): number | null {
   const raw = req.headers['x-mh-user'] ??
     new URL(req.url ?? '/', 'http://x').searchParams.get('user');
-  if (raw == null || raw === '') return 1;
+  if (raw == null || raw === '') return listUsers()[0]?.id ?? 1;
   const id = parseInt(String(raw), 10);
   if (!Number.isFinite(id)) return null;
   return userExists(id) ? id : null;
@@ -464,6 +466,22 @@ function readBodyToFile(req: IncomingMessage, file: string, max: number): Promis
 
 const uploadsInFlight = new Set<string>();
 
+// Residui di upload dal telefono: POST /api/upload scrive il temporaneo in
+// userData/imports e lo rimuove nel finally del handler — un kill/crash a
+// metà trasferimento lascia fino a 400MB mai cancellati. All'avvio del
+// server la dir si svuota: contiene SOLO temporanei (l'import copia in
+// libreria). Un restart durante un upload salta i file in scrittura via
+// uploadsInFlight; eventuali sotto-directory restano (mai scritte da qui).
+function cleanImportTemp(): void {
+  const dir = join(app.getPath('userData'), 'imports');
+  let names: string[];
+  try { names = readdirSync(dir); } catch { return; } // dir mai creata
+  for (const n of names) {
+    if (uploadsInFlight.has(n.toLowerCase())) continue;
+    try { unlinkSync(join(dir, n)); } catch { /* directory o file in uso */ }
+  }
+}
+
 // max: tetto del corpo JSON. 5MB per /api/call (backup import, code lunghe);
 // le route NON autenticate passano un tetto piccolo — un client anonimo non
 // deve poter far bufferizzare megabyte al server.
@@ -501,6 +519,7 @@ export function applyKeepAwake(): void {
 export function startRemoteServer(): void {
   const s = getSettings();
   if (!s.remoteEnabled || server) return;
+  cleanImportTemp();
   const port = s.remotePort ?? 48484;
   server = createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://x');

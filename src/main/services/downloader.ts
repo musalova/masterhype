@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { tmpdir } from 'os';
 import type { TrackRef, DownloadJob, DownloadStatus } from '../../shared/types';
 import { getSettings } from '../settings';
-import { IPC } from '../../shared/types';
+import { IPC, AUDIO_EXTS } from '../../shared/types';
 import { addTrack, recordEvent, bumpTaste, findByVideoId, importLocalFile, localVideoId } from './library';
 import { lastfmArtistTags, audiusSearch, audiusStreamUrl } from './sources';
 import { audiusMatch } from '../../shared/ytparse';
@@ -385,7 +385,9 @@ function execP(cmd: string, args: string[]): Promise<void> {
 }
 
 // ---- Import file locali (drag&drop) ----
-const AUDIO_EXT = new Set(['.mp3', '.flac', '.wav', '.m4a', '.ogg', '.opus', '.aac', '.wma']);
+// Lista condivisa con safeUploadName: un file accettato all'upload dal
+// telefono (es. .webm) entra in libreria invece di tornare 0 in silenzio.
+const AUDIO_EXT = new Set<string>(AUDIO_EXTS);
 
 async function probeAudio(p: string): Promise<{ durationS?: number; title?: string; artist?: string; album?: string }> {
   try {

@@ -128,19 +128,24 @@ const persistConf = () => { try { localStorage.setItem(CONF_KEY, JSON.stringify(
 const swControlled = (): boolean =>
   typeof navigator !== 'undefined' && !!navigator.serviceWorker?.controller;
 function swAnnounce(): void {
-  if (!conf || typeof navigator === 'undefined' || !navigator.serviceWorker) return;
-  const msg = { t: 'mh-pc-auth', base: conf.base, token: conf.token };
+  if (typeof navigator === 'undefined' || !navigator.serviceWorker) return;
+  // conf assente → 'mh-pc-clear': il SW conserva il token in IndexedDB e senza
+  // un clear esplicito /__pc/* resterebbe un proxy autenticato col token morto.
+  const msg = conf ? { t: 'mh-pc-auth', base: conf.base, token: conf.token } : { t: 'mh-pc-clear' };
   try { navigator.serviceWorker.controller?.postMessage(msg); } catch { /* */ }
   // Primo avvio: controller è null finché il SW non claima — lo raggiungiamo
   // comunque via registration.active (il messaggio sopravvive al claim).
   void navigator.serviceWorker.ready
     .then((r) => r.active?.postMessage(msg)).catch(() => {});
 }
-// Il SW riattivato (controllerchange) deve ricevere subito le credenziali.
+// Il SW riattivato (controllerchange) deve ricevere subito lo stato auth:
+// le credenziali se pairati, il clear se il pairing è stato scollegato.
 if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
   navigator.serviceWorker.addEventListener('controllerchange', () => swAnnounce());
 }
-if (conf) swAnnounce();
+// Anche a conf nulla: un clear al boot sana il token residuo nel SW se il
+// postMessage di scollegamento era andato perso (SW morto/non registrato).
+swAnnounce();
 
 export function saveRemoteConf(base: string, token: string, user = 1, devBound = false): void {
   const base2 = base.replace(/\/+$/, '');
@@ -169,9 +174,17 @@ export function saveRemoteConf(base: string, token: string, user = 1, devBound =
 }
 export function clearRemoteConf(): void {
   conf = null;
+  // La conf salvata va via DAVVERO: lasciarla riattiverebbe il pairing al
+  // reload — Scollega e 'senza PC' inutili, un device revocato (401) in un
+  // loop di reload infinito invece di fermarsi al gate.
+  try { localStorage.removeItem(CONF_KEY); } catch { /* */ }
+  // L'attesa di scelta profilo muore col pairing: un flag residuo chiederebbe
+  // "chi sei?" senza più credenziali valide.
+  try { localStorage.removeItem(PICK_PROFILE_KEY); } catch { /* */ }
   // Scollegare il dispositivo riporta al gate (pairing o scelta senza PC):
   // il flag va via — un flag residuo rientrerebbe muto in standalone.
   try { localStorage.removeItem(STANDALONE_KEY); } catch { /* */ }
+  swAnnounce(); // conf null → 'mh-pc-clear': anche il SW scorda il token
 }
 
 // Coda offline: quando tornerà utile? Nei toast — "alla riconnessione" è la

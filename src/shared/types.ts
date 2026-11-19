@@ -313,6 +313,12 @@ export const STATIONS: StationDef[] = [
   { id: 'classifiche', name: 'In classifica ora', desc: 'Le hit del momento in Italia', group: 'news', grad: 'from-accent2 to-accent' },
 ];
 
+// Estensioni audio importabili in libreria: UNICA lista condivisa tra il gate
+// di upload remoto (safeUploadName) e l'import (downloader.importFiles) — ciò
+// che si può caricare si deve anche poter importare, altrimenti un file
+// accettato all'upload viene scartato in silenzio dopo il trasferimento.
+export const AUDIO_EXTS = ['.mp3', '.m4a', '.aac', '.flac', '.wav', '.ogg', '.opus', '.webm', '.wma'] as const;
+
 // ---- Canali IPC ----
 export const IPC = {
   settingsGet: 'settings:get',

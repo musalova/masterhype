@@ -25,16 +25,22 @@ function swDb() {
 function loadPcAuth() {
   if (pcAuth) return Promise.resolve(pcAuth);
   if (!pcAuthP) {
-    pcAuthP = swDb().then((db) => new Promise((res) => {
+    // Il valore letto si adotta solo se è ancora la lettura corrente: un
+    // savePcAuth intervenuto nel frattempo (auth o clear) è più fresco.
+    const p = swDb().then((db) => new Promise((res) => {
       const q = db.transaction('kv', 'readonly').objectStore('kv').get('pc');
       q.onsuccess = () => res(q.result ?? null);
       q.onerror = () => res(null);
-    })).then((v) => { pcAuth = v; return v; }).catch(() => null);
+    })).then((v) => { if (pcAuthP === p) pcAuth = v; return pcAuth; }).catch(() => null);
+    pcAuthP = p;
   }
   return pcAuthP;
 }
 function savePcAuth(v) {
   pcAuth = v;
+  // Invalida la promise-cache: dopo un clear le fetch /__pc/ devono rileggere
+  // IndexedDB (→ null → 503), non riusare il token appena cancellato.
+  pcAuthP = null;
   swDb().then((db) => {
     const tx = db.transaction('kv', 'readwrite');
     if (v) tx.objectStore('kv').put(v, 'pc'); else tx.objectStore('kv').delete('pc');
@@ -107,7 +113,7 @@ async function servePhoneAudio(u, req) {
       let start = m[1] ? parseInt(m[1], 10) : 0;
       let end = m[2] ? Math.min(parseInt(m[2], 10), blob.size - 1) : blob.size - 1;
       if (!m[1] && m[2]) { start = Math.max(0, blob.size - parseInt(m[2], 10)); end = blob.size - 1; }
-      if (start >= blob.size) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${blob.size}` } });
+      if (start >= blob.size || start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${blob.size}` } });
       const part = blob.slice(start, end + 1);
       return new Response(part, {
         status: 206,

@@ -9,7 +9,7 @@ import { join } from 'node:path';
 const TMP = mkdtempSync(join(tmpdir(), 'mh-devices-'));
 vi.mock('electron', () => ({ app: { getPath: () => TMP } }));
 
-import { initDb, getDb } from '../src/main/db';
+import { initDb, getDb, runMaintenance } from '../src/main/db';
 import * as devices from '../src/main/services/devices';
 
 // Token per dispositivo: confine di sicurezza dei profili remoti —
@@ -64,6 +64,34 @@ describe('devices (token per dispositivo)', () => {
     devices.unbindUserDevices(42);
     expect(devices.deviceByToken(a.token)?.userId).toBeNull();
     expect(devices.deviceByToken(b.token)?.userId).toBe(43); // gli altri restano
+  });
+
+  it('runMaintenance: pota gli orfani inattivi >30gg, non quelli vivi o legati', () => {
+    const day = 86_400_000;
+    const old = Date.now() - 40 * day;
+    // orfano abbandonato: mintato >30gg fa e mai più visto → pota
+    const dead = devices.mintDevice('Orfano vecchio');
+    getDb().prepare('UPDATE devices SET created_at=? WHERE id=?').run(old, dead.id);
+    // orfano vecchio ma VIVO (last_seen recente: fermo al gate, non abbandonato) → resta
+    const alive = devices.mintDevice('Orfano vivo');
+    getDb().prepare('UPDATE devices SET created_at=?, last_seen=? WHERE id=?')
+      .run(old, Date.now(), alive.id);
+    // orfano fresco → resta
+    const fresh = devices.mintDevice('Orfano fresco');
+    // legato a un profilo, anche se vecchio → resta (non è un pairing abbandonato)
+    const bound = devices.mintDevice('Legato');
+    devices.bindDevice(bound.id, 1);
+    getDb().prepare('UPDATE devices SET created_at=? WHERE id=?').run(old, bound.id);
+
+    // il pruning è throttlato 1×/giorno sul marker → si azzera e si rilancia
+    getDb().prepare(`INSERT INTO prefs (k,v) VALUES ('sys:last-prune','0')
+      ON CONFLICT(k) DO UPDATE SET v=excluded.v`).run();
+    runMaintenance();
+
+    expect(devices.deviceByToken(dead.token)).toBeNull();
+    expect(devices.deviceByToken(alive.token)?.id).toBe(alive.id);
+    expect(devices.deviceByToken(fresh.token)?.id).toBe(fresh.id);
+    expect(devices.deviceByToken(bound.token)?.id).toBe(bound.id);
   });
 
   it('listDevices: tutti i device, mai l\'hash del token', () => {

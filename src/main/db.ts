@@ -314,6 +314,10 @@ export function initDb(): void {
     for (const p of [t.file_path, t.cover_path]) {
       if (p && existsSync(p)) try { unlinkSync(p); } catch { /* in uso */ }
     }
+    // La riga va via solo se i file sono davvero spariti: con unlink fallito
+    // (file in uso) l'MP3 resterebbe orfano su disco per sempre. deleted_at
+    // la tiene già fuori dalla UI → il purge riprova al prossimo boot.
+    if (existsSync(t.file_path) || (t.cover_path && existsSync(t.cover_path))) continue;
     db.prepare('DELETE FROM playlist_tracks WHERE track_id=?').run(t.id);
     db.prepare('DELETE FROM tracks WHERE id=?').run(t.id);
   }
@@ -327,19 +331,30 @@ export function initDb(): void {
 // il checkpoint WAL gira a OGNI boot (cheap: fonde il -wal nel file principale)
 // e il VACUUM parte solo se il pruning ha davvero cancellato righe.
 const RETENTION_MS = 548 * 86_400_000; // ~18 mesi
+// Pairing abbandonati a metà: device mai legati a un profilo (ogni /pair,
+// riscatto QR o device:register minta una riga). Senza purge il token resta
+// valido per device:claim a tempo indeterminato e la riga sporca la lista
+// Dispositivi. Si pota su COALESCE(last_seen, created_at): un device slegato
+// ma ancora vivo (fermo al gate "Chi sei?" che continua a chiamare) non è
+// orfano — vale anche per unbindUserDevices su device vecchi ma in uso.
+const ORPHAN_DEVICE_MS = 30 * 86_400_000; // ~30 giorni
 
-function runMaintenance(): void {
+export function runMaintenance(): void {
   try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch { /* best-effort */ }
   try {
     const last = Number(
       (db.prepare(`SELECT v FROM prefs WHERE k='sys:last-prune'`).get() as { v: string } | undefined)?.v ?? 0);
     if (Date.now() - last < 86_400_000) return;
-    db.prepare(`INSERT INTO prefs (k,v) VALUES ('sys:last-prune',?)
-      ON CONFLICT(k) DO UPDATE SET v=excluded.v`).run(String(Date.now()));
     const cutoff = Date.now() - RETENTION_MS;
     let deleted = 0;
     db.exec('BEGIN');
     try {
+      // Il marcatore sta DENTRO la transazione: committato insieme ai DELETE.
+      // Se il pruning fallisce il rollback lo annulla e la manutenzione
+      // ritenta al prossimo boot — in autocommit resterebbe scritto e
+      // salterebbe 24h con le tabelle ancora piene.
+      db.prepare(`INSERT INTO prefs (k,v) VALUES ('sys:last-prune',?)
+        ON CONFLICT(k) DO UPDATE SET v=excluded.v`).run(String(Date.now()));
       // Gli eventi di ascolto (play/partial/complete) sono i voluminosi e il
       // loro peso sui gusti decade a ~0 ben prima dei 18 mesi (half-life
       // ~45gg in tasteProfile/trackAffinity): potati. ECCEZIONE: i play di
@@ -356,6 +371,9 @@ function runMaintenance(): void {
         .run(cutoff, cutoff).changes);
       deleted += Number(db.prepare('DELETE FROM artist_cooc WHERE ts < ?').run(cutoff).changes);
       deleted += Number(db.prepare('DELETE FROM usage WHERE ts < ?').run(cutoff).changes);
+      deleted += Number(db.prepare(
+        'DELETE FROM devices WHERE user_id IS NULL AND COALESCE(last_seen, created_at) < ?')
+        .run(Date.now() - ORPHAN_DEVICE_MS).changes);
       db.exec('COMMIT');
     } catch {
       try { db.exec('ROLLBACK'); } catch { /* niente da annullare */ }

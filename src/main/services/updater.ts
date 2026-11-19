@@ -5,11 +5,15 @@
 
 import { app } from 'electron';
 import { join } from 'path';
-import { mkdirSync, writeFileSync, readFileSync, renameSync } from 'fs';
+import { mkdirSync, readFileSync, renameSync, createWriteStream, unlinkSync } from 'fs';
 import { execFile } from 'child_process';
 import { createHash } from 'node:crypto';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ReadableStream } from 'node:stream/web';
 import { ytDlpPath } from './downloader';
 import { getSettings } from '../settings';
+import { writeFileAtomic } from '../fsAtomic';
 import { report } from './telemetry';
 
 const userBinDir = () => join(app.getPath('userData'), 'bin');
@@ -21,7 +25,7 @@ const loadState = (): UpdState => {
   try { return JSON.parse(readFileSync(stateFile(), 'utf-8')) as UpdState; } catch { return { checkedAt: 0 }; }
 };
 const saveState = (s: UpdState) => {
-  try { mkdirSync(userBinDir(), { recursive: true }); writeFileSync(stateFile(), JSON.stringify(s)); } catch { /* */ }
+  try { mkdirSync(userBinDir(), { recursive: true }); writeFileAtomic(stateFile(), JSON.stringify(s)); } catch { /* */ }
 };
 
 function currentVersion(): Promise<string> {
@@ -75,22 +79,37 @@ export async function maybeUpdateYtDlp(): Promise<void> {
     const cur = await currentVersion();
     if (cur === latest.tag) { saveState({ checkedAt: Date.now(), version: cur }); return; }
 
-    const tmp = join(userBinDir(), 'yt-dlp.exe.tmp');
-    const res = await fetch(latest.url, { signal: AbortSignal.timeout(120_000) });
-    if (!res.ok) throw new Error(`download ${res.status}`);
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 1_000_000) throw new Error('download troncato');
     // Integrità: l'hash pubblicato in SHA2-256SUMS lega l'exe a CIÒ CHE LA
     // RELEASE DICHIARA — copre download corrotto/MITM sul CDN, non un account
     // GitHub compromesso (che righerebbe anche le somme: servirebbe la firma
     // GPG, fuori scope senza keyring). Senza somme pubblicate → non si aggiorna.
+    // Il file delle somme è minuscolo: si verifica PRIMA del download da 15MB.
     if (!latest.sumsUrl) throw new Error('SHA2-256SUMS assente nella release — update saltato');
     const want = await expectedSha256(latest.sumsUrl);
     if (!want) throw new Error('hash yt-dlp.exe non trovato in SHA2-256SUMS');
-    const got = createHash('sha256').update(buf).digest('hex');
-    if (got !== want) throw new Error(`hash yt-dlp.exe non corrisponde (${got.slice(0, 12)}… ≠ ${want.slice(0, 12)}…)`);
-    writeFileSync(tmp, buf);
-    renameSync(tmp, localYtDlp());
+
+    const tmp = join(userBinDir(), 'yt-dlp.exe.tmp');
+    try {
+      const res = await fetch(latest.url, { signal: AbortSignal.timeout(120_000) });
+      if (!res.ok) throw new Error(`download ${res.status}`);
+      if (!res.body) throw new Error('download senza corpo');
+      // Stream su .tmp (mai ~15MB in RAM): l'hash si calcola sui chunk in
+      // transito e il rename avviene solo DOPO la verifica — un .tmp
+      // troncato o avvelenato non diventa mai yt-dlp.exe.
+      const hash = createHash('sha256');
+      let size = 0;
+      const tap = new Transform({
+        transform(chunk: Uint8Array, _enc, cb) { size += chunk.length; hash.update(chunk); cb(null, chunk); },
+      });
+      await pipeline(Readable.fromWeb(res.body as unknown as ReadableStream), tap, createWriteStream(tmp));
+      if (size < 1_000_000) throw new Error('download troncato');
+      const got = hash.digest('hex');
+      if (got !== want) throw new Error(`hash yt-dlp.exe non corrisponde (${got.slice(0, 12)}… ≠ ${want.slice(0, 12)}…)`);
+      renameSync(tmp, localYtDlp());
+    } catch (e) {
+      try { unlinkSync(tmp); } catch { /* tmp assente o già rinominato */ }
+      throw e;
+    }
     saveState({ checkedAt: Date.now(), version: latest.tag });
     report('generic', { message: `yt-dlp aggiornato: ${cur || '?'} → ${latest.tag}` });
   } catch (e) {

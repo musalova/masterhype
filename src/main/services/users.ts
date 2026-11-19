@@ -48,8 +48,11 @@ export function deleteUser(id: number): void {
   getDb().prepare('DELETE FROM remote_likes WHERE user_id=?').run(id);
   getDb().prepare('DELETE FROM track_likes WHERE user_id=?').run(id);
   getDb().prepare('DELETE FROM burned_cds WHERE user_id=?').run(id);
+  getDb().prepare('DELETE FROM artist_cooc WHERE user_id=?').run(id);
+  getDb().prepare('DELETE FROM usage WHERE user_id=?').run(id);
   getDb().prepare('DELETE FROM prefs WHERE k LIKE ?').run(`u${id}:%`);
   getDb().prepare('DELETE FROM search_picks WHERE query_key LIKE ?').run(`u${id}|%`);
+  getDb().prepare('DELETE FROM trend_cache WHERE source=?').run(`merged:u${id}`);
   // I device legati a questo profilo NON vengono revocati: restano pairati,
   // tornano "da associare" e ri-scelgono un profilo al prossimo accesso.
   unbindUserDevices(id);

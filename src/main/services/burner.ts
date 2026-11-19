@@ -167,7 +167,7 @@ async function burnAudioInner(driveId: string, tracks: LibraryTrack[], name: str
     await runHelper(['burn-audio', '--drive', driveId, '--files', listFile, '--titles', titlesFile, '--album', name, '--speed', String(speed)], sendTitled, tracks.length);
     recordBurn(name, 'audio', tracks, u);
     ok = true;
-    await ejectDisc(driveId).catch(() => {}); // espelli il disco finito
+    await ejectDiscInner(driveId).catch(() => {}); // espelli il disco finito
   } catch (e) {
     // Errori di scrittura tracciati: servono a capire drive/media problematici
     report('burn', { message: `audio "${name}" (${tracks.length} tracce): ${e instanceof Error ? e.message : e}` });
@@ -189,7 +189,14 @@ async function burnDataInner(driveId: string, tracks: LibraryTrack[], name: stri
   const jobId = randomUUID();
   const send = (p: Partial<BurnProgress>) => notify(IPC.burnEvent, { jobId, ...p });
   send({ phase: 'prepare', percent: 2, message: 'Preparazione file' });
-  assertTempSpace(tracks.reduce((s, t) => s + (t.durationS ?? 210) * (+(getSettings().audioQuality || '320') / 8) * 1.1, 0));
+  // Byte REALI da copiare in TEMP: sullo stesso volume stageDataDir fa
+  // hardlink (zero copia), altrove copia vera — la vecchia stima
+  // kbps×durata era in kilobyte e sottostimava lo spazio di ~1000×
+  const tempDev = statSync(tmpdir()).dev;
+  assertTempSpace(tracks.reduce((s, t) => {
+    const st = statSync(t.filePath);
+    return s + (st.dev === tempDev ? 0 : st.size);
+  }, 0));
   const dir = stageDataDir(tracks);
   const listFile = join(tmpdir(), `mh-list-${jobId}.txt`);
   burnStart();
@@ -204,7 +211,7 @@ async function burnDataInner(driveId: string, tracks: LibraryTrack[], name: stri
     await runHelper(['burn-data', '--drive', driveId, '--files', listFile, '--label', name, '--speed', String(speed)], send, tracks.length);
     recordBurn(name, 'mp3', tracks, u);
     ok = true;
-    await ejectDisc(driveId).catch(() => {});
+    await ejectDiscInner(driveId).catch(() => {});
   } catch (e) {
     report('burn', { message: `mp3 "${name}" (${tracks.length} tracce): ${e instanceof Error ? e.message : e}` });
     throw e;
@@ -234,8 +241,16 @@ async function eraseDiscInner(driveId: string, full: boolean): Promise<void> {
 }
 
 export async function ejectDisc(driveId: string): Promise<void> {
+  // Espellere a metà scrittura butta il disco: il canale rifiuta mentre il
+  // laser lavora (burn o erase). Le espulsioni interne post-scrittura
+  // usano ejectDiscInner — aprire il vassoio è il loro scopo.
+  if (isBurning()) throw new Error('Una masterizzazione è già in corso');
+  await ejectDiscInner(driveId);
+}
+async function ejectDiscInner(driveId: string): Promise<void> {
   await new Promise<void>((resolve) => {
-    execFile(helper(), ['eject', '--drive', driveId], { windowsHide: true }, () => resolve());
+    // timeout: un drive occupato non deve lasciare burnMutex appeso per sempre
+    execFile(helper(), ['eject', '--drive', driveId], { windowsHide: true, timeout: 20000 }, () => resolve());
   });
 }
 

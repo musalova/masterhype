@@ -14,6 +14,7 @@ import { setPlayerStateListener, setHandlersNotifier, setApkInfoProvider } from 
 import { restoreQueue } from './services/downloader';
 import { initAppUpdate, checkAppUpdate, appUpdateState, installAppUpdate } from './services/appUpdate';
 import { findUpdateSource } from './update';
+import { allowedNavigation } from './navGuard';
 import { statSync } from 'fs';
 import { IPC } from '../shared/types';
 
@@ -33,6 +34,16 @@ let nowPlaying = { title: '', artist: '', playing: false, remote: false };
 function send(channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   remoteBroadcast(channel, payload); // anche i client remoti (telefono) ricevono gli eventi
+}
+
+// Apertura nel browser di sistema solo per schemi sicuri: un link file://
+// avvierebbe eseguibili locali e schemi custom (javascript:, intent:,
+// ms-word:) raggiungerebbero handler arbitrari del sistema operativo.
+function openExternalSafe(url: string): void {
+  try {
+    const p = new URL(url).protocol;
+    if (p === 'http:' || p === 'https:' || p === 'mailto:') void shell.openExternal(url);
+  } catch { /* URL non parsabile: niente apertura */ }
 }
 
 // Tray: icona nell'area notifiche con controlli rapidi e brano corrente nel tooltip
@@ -87,19 +98,21 @@ function createWindow(): void {
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    openExternalSafe(url);
     return { action: 'deny' };
   });
 
-  // La finestra deve navigare SOLO sulla nostra UI (file:// in produzione,
-  // dev-server in sviluppo): un link/redirect qualunque nel renderer non
-  // deve poter caricare contenuto remoto nel contesto privilegiato (preload
-  // con API IPC). Gli esterni li apre il browser di sistema.
+  // La finestra deve navigare SOLO sulla nostra UI (il path del renderer in
+  // produzione, dev-server in sviluppo): un link/redirect qualunque nel
+  // renderer non deve poter caricare contenuto remoto nel contesto
+  // privilegiato (preload con API IPC) — con file:// generico basterebbe una
+  // share UNC (file://host/share = remoto su Windows). Gli esterni li apre
+  // il browser di sistema.
+  const rendererDir = join(__dirname, '../renderer');
   win.webContents.on('will-navigate', (e, url) => {
-    const dev = process.env.ELECTRON_RENDERER_URL;
-    if (url.startsWith('file://') || (dev && url.startsWith(dev))) return;
+    if (allowedNavigation(url, rendererDir, process.env.ELECTRON_RENDERER_URL)) return;
     e.preventDefault();
-    void shell.openExternal(url);
+    openExternalSafe(url);
   });
 
   // La X non esce: riduce in tray. Il server remoto resta vivo — il telefono
@@ -132,7 +145,7 @@ function createWindow(): void {
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'));
+    win.loadFile(join(rendererDir, 'index.html'));
   }
 }
 

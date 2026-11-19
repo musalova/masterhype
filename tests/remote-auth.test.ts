@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IPC } from '../src/shared/types';
@@ -13,6 +13,9 @@ import { IPC } from '../src/shared/types';
 const TMP = mkdtempSync(join(tmpdir(), 'mh-remote-'));
 const PORT = 48555;
 const ADMIN = 'ADMINTOK-condiviso';
+// Tabella profili mutabile: un test elimina id=1 per verificare il ripiego
+// di reqUser sul primo esistente (admin senza X-MH-User).
+const usersTable = vi.hoisted(() => ({ ids: [1, 2, 3] }));
 
 vi.mock('electron', () => ({ app: { getPath: () => TMP, getVersion: () => '0.0.0-test', isPackaged: false } }));
 vi.mock('../src/main/settings', () => ({
@@ -39,7 +42,10 @@ vi.mock('../src/main/handlers', () => ({
     [IPC.pairingCode]: () => ({ code: mintPairCode(), leftMs: 300_000 }),
   },
 }));
-vi.mock('../src/main/services/users', () => ({ userExists: (id: number) => id >= 1 && id <= 3 }));
+vi.mock('../src/main/services/users', () => ({
+  userExists: (id: number) => usersTable.ids.includes(id),
+  listUsers: () => usersTable.ids.map((id) => ({ id, name: `P${id}` })),
+}));
 vi.mock('../src/main/services/library', () => ({ getTrack: () => undefined }));
 vi.mock('../src/main/services/telemetry', () => ({ report: () => {} }));
 vi.mock('../src/main/update', () => ({ serveUpdateRoutes: () => {} }));
@@ -62,13 +68,35 @@ const call = async (c: string, a: unknown[] = [], tok = ADMIN, u?: number) => {
 const pair = () => fetch(`${base}/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
 
 describe('server remoto — auth a due livelli (admin / device token)', () => {
-  beforeAll(() => { initDb(); startRemoteServer(); });
+  beforeAll(() => {
+    // Residuo di un upload interrotto da kill/crash: all'avvio deve sparire.
+    mkdirSync(join(TMP, 'imports', 'sottodir'), { recursive: true });
+    writeFileSync(join(TMP, 'imports', 'residuo.mp3'), 'x'.repeat(1024));
+    initDb(); startRemoteServer();
+  });
   afterAll(() => stopRemoteServer());
+
+  it('avvio: i residui di upload in userData/imports vengono spazzati', () => {
+    expect(existsSync(join(TMP, 'imports', 'residuo.mp3'))).toBe(false);
+    // mai scritte dal server: le sotto-directory non si toccano
+    expect(existsSync(join(TMP, 'imports', 'sottodir'))).toBe(true);
+  });
 
   it('admin: X-MH-User sceglie il profilo (compatibilità gestione)', async () => {
     expect((await call(IPC.usersCurrent, [], ADMIN, 3)).r).toBe(3);
-    expect((await call(IPC.usersCurrent)).r).toBe(1); // assente → legacy 1
+    expect((await call(IPC.usersCurrent)).r).toBe(1); // assente → primo profilo esistente
     expect((await call(IPC.usersCurrent, [], ADMIN, 99)).status).toBe(401);
+  });
+
+  it('admin senza X-MH-User: id=1 eliminato → ripiega sul primo esistente', async () => {
+    usersTable.ids = [2, 3]; // il profilo 1 è eliminabile: niente utente fantasma
+    try {
+      expect((await call(IPC.usersCurrent)).r).toBe(2);
+      // header ESPLICITO verso un profilo eliminato resta 401 (→ scelta profilo)
+      expect((await call(IPC.usersCurrent, [], ADMIN, 1)).status).toBe(401);
+    } finally {
+      usersTable.ids = [1, 2, 3];
+    }
   });
 
   it('codice monouso QR: riscatta senza finestra, monouso, admin-only nel mint', async () => {

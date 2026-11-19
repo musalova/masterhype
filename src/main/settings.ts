@@ -32,6 +32,20 @@ const defaults = (): Settings => ({
   autoUpdateApp: true,
 });
 
+// Whitelist sulle chiavi di defaults(): un patch con chiavi arbitrarie (da
+// remoto il body arriva a ~5MB) si annidava in settings.json e il file —
+// riscritto interamente a ogni salvataggio — cresceva per sempre. Il filtro
+// vale anche per il file letto al boot: le chiavi piantate in passato muoiono
+// al primo avvio.
+let knownKeys: Set<string> | undefined;
+const pickKnown = (obj: unknown): Partial<Settings> => {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {};
+  knownKeys ??= new Set(Object.keys(defaults()));
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(obj)) if (knownKeys.has(k)) out[k] = (obj as Record<string, unknown>)[k];
+  return out as Partial<Settings>;
+};
+
 export function initSettings(): Settings {
   const dir = app.getPath('userData');
   mkdirSync(dir, { recursive: true });
@@ -42,7 +56,7 @@ export function initSettings(): Settings {
   const loaded = readJsonWithBackup<unknown>(file);
   const saved = loaded && loaded.value && typeof loaded.value === 'object' && !Array.isArray(loaded.value)
     ? loaded.value as Partial<Settings> : {};
-  settings = { ...defaults(), ...saved };
+  settings = { ...defaults(), ...pickKnown(saved) };
   if (loaded?.fromBackup) writeFileAtomic(file, JSON.stringify(settings, null, 2)); // ripara il principale
   else if (loaded) snapshotBackup(file);
   // Un disco removibile sparito non deve impedire l'avvio dell'app
@@ -66,10 +80,12 @@ export function setSettingsChangedHook(fn: (patch: Partial<Settings>) => void): 
 }
 
 export function setSettings(patch: Partial<Settings>): Settings {
-  settings = { ...settings, ...patch };
+  const clean = pickKnown(patch);
+  if (!Object.keys(clean).length) return settings; // solo chiavi ignote: niente da salvare
+  settings = { ...settings, ...clean };
   writeFileAtomic(join(app.getPath('userData'), 'settings.json'), JSON.stringify(settings, null, 2));
   // Drive removibile assente: non deve far fallire il salvataggio delle altre opzioni
-  if (patch.libraryDir) try { mkdirSync(settings.libraryDir, { recursive: true }); } catch { /* */ }
-  try { onSettingsChanged(patch); } catch { /* hook non deve rompere il salvataggio */ }
+  if (clean.libraryDir) try { mkdirSync(settings.libraryDir, { recursive: true }); } catch { /* */ }
+  try { onSettingsChanged(clean); } catch { /* hook non deve rompere il salvataggio */ }
   return settings;
 }

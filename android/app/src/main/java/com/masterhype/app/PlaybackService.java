@@ -49,6 +49,13 @@ public class PlaybackService extends Service {
     private static final String ACTION_DISMISS = "com.masterhype.app.ms.DISMISS";
     private static final int NOTIF_ID = 44171;
     private static final String CHANNEL = "playback";
+    // Se il render process della WebView muore, ACTION_UPDATE smette di
+    // arrivare: un acquire() senza scadenza terrebbe la CPU sveglia per
+    // sempre (musica ferma, batteria drenata). Il lock si rinnova a ogni
+    // update col playing (push ~5s da PlayerBar): 3min assorbono stall di
+    // buffering e throttle del renderer, ma morto il renderer il lock
+    // scade da solo.
+    private static final long WAKE_TIMEOUT_MS = 3 * 60_000;
 
     private MediaSession session;
     private PowerManager.WakeLock wakeLock;
@@ -226,7 +233,11 @@ public class PlaybackService extends Service {
                 } catch (Exception ignored) {}
             }
             art = bmp;
-            main.post(this::refreshQuiet);
+            final boolean failed = bmp == null;
+            main.post(() -> {
+                if (failed && u.equals(artLoaded)) artLoaded = "";
+                refreshQuiet();
+            });
         });
     }
 
@@ -235,7 +246,11 @@ public class PlaybackService extends Service {
     }
 
     private void grabWake() {
-        if (!wakeHeld) { wakeLock.acquire(); wakeHeld = true; }
+        // Rinnovo a OGNI update col playing: il lock non è reference-counted,
+        // un acquire extra non si accumula — riarma solo la scadenza (se il
+        // lock è già scaduto da solo, questo lo riprende).
+        wakeLock.acquire(WAKE_TIMEOUT_MS);
+        wakeHeld = true;
     }
 
     private void releaseWake() {

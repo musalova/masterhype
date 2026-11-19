@@ -103,6 +103,14 @@ export default function PlayerBar() {
   const targetVol = (vid?: string) =>
     muted ? 0 : Math.min(1, useApp.getState().player.volume * (gainMap.get(vid ?? '') ?? 1));
 
+  // Spinner "in caricamento": due flag da spegnere insieme — `loading` locale e
+  // `buffering` dello store (spinner anche su righe/poster). La sync
+  // loading→buffering scatta solo quando loading CAMBIA: i percorsi in cui il
+  // load abortisce senza una nuova run che riaccenda (brano sparito con
+  // stop()/elimina durante srcOf, traccia già sull'elemento) devono spegnerli
+  // entrambi da sé, o restano accesi per sempre.
+  const clearLoading = () => { setLoading(false); useApp.getState().setBuffering(false); };
+
   // Chiede al main la misura LUFS appena è pronta (l'analisi ffmpeg gira in
   // background dopo la risoluzione dello stream); quando arriva riapplica il volume.
   const pollLoudness = (vid: string | undefined, a: HTMLAudioElement) => {
@@ -173,14 +181,15 @@ export default function PlayerBar() {
   useEffect(() => {
     const a = el();
     const o = otherEl();
-    if (!a || !o || !cur) return;
+    if (!a || !o || !cur) { clearLoading(); return; } // brano sparito: nessun .finally spegnerà lo spinner
     const vid = cur.videoId;
     xfGen.current++;
     const gen = xfGen.current;
     // Già caricato sull'elemento attivo (es. dopo auto-riparazione): non ricaricare
-    if (a.dataset.vid === vid && a.src) return;
+    if (a.dataset.vid === vid && a.src) { clearLoading(); return; }
     if (o.dataset.vid === vid && o.src) {
       // Il crossfade a fine brano ha già caricato questo brano sull'altro elemento: basta scambiarli
+      clearLoading();
       fadeOut(a);
       o.volume = targetVol(o.dataset.vid);
       setAct(1 - act);
@@ -198,6 +207,7 @@ export default function PlayerBar() {
         .then((r) => {
           if (gen !== xfGen.current || useApp.getState().player.current?.videoId !== vid) {
             if (manXf.current === gen) manXf.current = -1;
+            if (!useApp.getState().player.current) clearLoading();
             return;
           }
           o.src = r.url;
@@ -226,7 +236,7 @@ export default function PlayerBar() {
         })
         .catch(() => {
           if (manXf.current === gen) manXf.current = -1;
-          if (useApp.getState().player.current?.videoId !== vid) return;
+          if (useApp.getState().player.current?.videoId !== vid) { if (!useApp.getState().player.current) clearLoading(); return; }
           useApp.getState().toast('Anteprima non disponibile', 'err');
           setLoading(false);
           setTimeout(() => { if (useApp.getState().player.current?.videoId === vid) next(); }, 800);
@@ -259,7 +269,12 @@ export default function PlayerBar() {
         useApp.getState().toast('Anteprima non disponibile', 'err');
         setTimeout(() => { if (useApp.getState().player.current?.videoId === vid) next(); }, 800);
       })
-      .finally(() => { if (useApp.getState().player.current?.videoId === vid) setLoading(false); });
+      .finally(() => {
+        // Traccia cambiata: lo spinner lo gestisce la run del nuovo brano. Traccia
+        // SPARITA (stop/elimina durante srcOf): nessuna run lo spegne — va fatto qui.
+        const now = useApp.getState().player.current?.videoId;
+        if (now === vid || !now) clearLoading();
+      });
   }, [cur?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

@@ -1,4 +1,5 @@
 // Guardie pure (niente electron) del server remoto — testabili in vitest.
+import { AUDIO_EXTS } from '../shared/types';
 
 // Impostazioni modificabili SOLO dal desktop: toccano il PC fisico o la sua
 // sicurezza. updateUrl da remoto = il PC installerebbe un EXE arbitrario;
@@ -42,12 +43,14 @@ export function sanitizeRemoteSettings(patch: unknown): Record<string, unknown> 
 }
 
 // Nome file di un upload dal telefono: solo il basename, estensione audio
-// ammessa, caratteri riservati di Windows rimossi. null = rifiutato.
-const AUDIO_EXT = /\.(mp3|m4a|aac|flac|wav|ogg|opus|webm|wma)$/i;
+// ammessa (AUDIO_EXTS condiviso con l'import — un'ext accettata qui DEVE
+// essere importabile o l'upload viene scartato a 0 dopo il trasferimento),
+// caratteri riservati di Windows rimossi. null = rifiutato.
 export function safeUploadName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const base = raw.split(/[\\/]/).pop() ?? '';
   // eslint-disable-next-line no-control-regex -- i caratteri di controllo sono proprio ciò che va tolto dai nomi file
   const clean = base.replace(/[<>:"|?*\x00-\x1f]/g, '').replace(/^\.+/, '').trim().slice(0, 150);
-  return clean && AUDIO_EXT.test(clean) ? clean : null;
+  const lower = clean.toLowerCase();
+  return clean && AUDIO_EXTS.some((e) => lower.endsWith(e)) ? clean : null;
 }
