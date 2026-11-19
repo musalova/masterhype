@@ -439,6 +439,20 @@
   `mh-trends-cache:u<id>`. `addDownload`/`downloadToCd` a PC spento accodano in
   pendingSync invece di fallire; `settings.set` va in coda merged (toast onesto,
   mai finto successo). Il burn resta PC-only (hardware).
+- Suggerimenti autonomi (4G/PC spento): il profilo gusti è `tasteRowsOffline` =
+  cache PC `mh-taste-cache:u<id>:<kind>` + segnali locali (mergeTaste), fallback
+  `localTaste` standalone puro. Regole: autocomplete `yt.suggest` antepone
+  `localSuggestArtists` (artisti del profilo che matchano il prefisso) ai
+  suggerimenti YouTube — mai lista vuota, mai sconosciuti in testa;
+  `offlineSuggest` (Home "Per te") è async: correlati upNext sui semi più amati
+  con `reason` "perché ascolti X", mai brani già posseduti, certezze locali solo
+  se la rete non dà niente (cache 30min in `mh-auto-cache:u<id>:sugg:local`);
+  le pool di scoperta (`tasteSeededPool`) partono da upNext dei propri semi —
+  le classifiche globali sono quota minore, mai dominanti; i mix/radio di
+  genere (`genrePool`) si seminano dalle tracce proprie di quel genere, NON da
+  "${genre} hits" nudo. Tag spazzatura (seen live/favorites/vocalists/misc…)
+  filtrati dall'UNICO `JUNK_TAGS`/`cleanTags` di offlineRec — Home, Stazioni e
+  Playlist lo condividono, mai duplicare set locali.
 - Boot veloce col PC morto: `call()` ha timeout 10s + FAIL-FAST se `isOnline()===false`
   (mai attendere TCP timeout su host morto). Stato online persistito in `mh-was-online`:
   chi usa il telefono lontano dal PC riparte in modalità autonoma, il probe /api/info
@@ -457,10 +471,33 @@
   in remote.ts): il banner offline mostra "dati di <N> fa" — lo stato stale del
   boot a PC morto dichiara la sua età invece di fingersi attuale.
 - PlayerBar: `srcOf` fa ping Range 0-0 (3s) al file del PC prima di fidarsi (finestra
-  probe) e l'heal (`attemptHeal`, 1×/videoId/sessione) ripara ANCHE i filePath su
-  remoto via copia telefono → stream diretto (skipPc). Watchdog: 30s senza
-  loadedmetadata o 12s di stalled/waiting → heal/skip. Prefetch next-track salta in
+  probe — conta SOLO ok/404 dal server vero: il SW risponde 503/502 anche con fetch
+  riuscita e NON vale come "PC vivo") e l'heal (`attemptHeal`, 1×/videoId/sessione)
+  ripara ANCHE i filePath su remoto via copia telefono → stream diretto (skipPc).
+  Watchdog: 30s senza loadedmetadata o 12s di stalled/waiting → heal/skip.
+  Freno skip-cascade: 3 fallimenti di fila senza che un brano suoni ≥30s → pausa
+  + toast, MAI svuotare la coda a colpi di next. Prefetch next-track salta in
   modalità autonoma e se il brano è già sul telefono.
+- Stream da remoto (`ytCallStream` in remoteApi.ts): `streamUrl`/`playStream`/
+  `videoUrl` su QUALUNQUE errore remoto (anche applicativo/timeout, non solo
+  offline) ripiegano sulla cascata diretta del telefono — è più robusta della
+  risoluzione yt-dlp del PC (validazione ultimo byte + PoToken); il fallimento
+  resta in telemetria (kind 'pc-stream'). Vale SOLO per la risoluzione stream:
+  gli altri canali mantengono "errore applicativo ≠ offline, niente fallback".
+- Validazione stream lato PC (`downloader.playStream`): ogni URL risolto (anche
+  dal heal) passa la probe sull'ULTIMO byte come `probeStreamUrl` in direct.ts —
+  gated → markBad + candidato successivo, niente URL che muoiono a ~1MB consegnati
+  ai client. Budget complessivo 25s (< timeout call 30s): oltre, il lavoro
+  resterebbe orfano perché il client ha già saltato.
+- Connettività remota: l'evento `offline` del browser NON marca il PC morto
+  (Wi-Fi senza internet ≠ PC giù) — si lancia `probeRemoteHealth` che decide
+  (e chiude un EventSource rimasto aperto se fallisce tutto). Il probe al
+  failover prova `conf.base` poi gli ALTS in PARALLELO (era seriale: N×5s).
+  `altAddresses` esclude le schede virtuali (vEthernet/VMware/VirtualBox/WSL/
+  Docker/Pseudo/Loopback/Bluetooth): IP "LAN" irraggiungibili dal telefono.
+  `resync` al reconnect è throttlato 60s sui reload pesanti (drain code sempre).
+  SW `proxyPc` propaga `req.signal` alla fetch upstream: gli abort di <audio>
+  uccidono lo stream sul PC invece di lasciare download zombie.
 - Protocollo /api/call (`call()` in remote.ts): risposta valida SOLO se contiene `r`
   o `e` — un 200 senza envelope (captive portal, proxy, body non-JSON) è errore di
   RETE (offline+probe), mai `undefined` risolto né 401 fasullo. Senza questo check

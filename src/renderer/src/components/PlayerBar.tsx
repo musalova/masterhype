@@ -44,6 +44,11 @@ export default function PlayerBar() {
   const xfDone = useRef(''); // videoId per cui il crossfade è già partito
   const manXf = useRef(-1);  // gen della dissolvenza da cambio manuale in corso (-1 = nessuna)
   const healedOnce = useRef(new Set<string>()); // videoId già riparati in questa sessione
+  // Freno allo skip-cascade: se OGNI brano fallisce di fila (PC/rete/stream
+  // rotti) la coda veniva svuotata a colpi di toast + next. Contiamo gli
+  // errori consecutivi — reset quando un brano suona ≥30s — e dopo 3 di
+  // fila mettiamo in pausa con un messaggio chiaro invece di continuare.
+  const failStreak = useRef(0);
   const [time, setTime] = useState(0);
   const [dur, setDur] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -237,8 +242,9 @@ export default function PlayerBar() {
         .catch(() => {
           if (manXf.current === gen) manXf.current = -1;
           if (useApp.getState().player.current?.videoId !== vid) { if (!useApp.getState().player.current) clearLoading(); return; }
-          useApp.getState().toast('Anteprima non disponibile', 'err');
           setLoading(false);
+          if (notePlayFailure()) return;
+          useApp.getState().toast('Anteprima non disponibile', 'err');
           setTimeout(() => { if (useApp.getState().player.current?.videoId === vid) next(); }, 800);
         });
       return;
@@ -266,6 +272,7 @@ export default function PlayerBar() {
       })
       .catch(() => {
         if (useApp.getState().player.current?.videoId !== vid) return;
+        if (notePlayFailure()) return;
         useApp.getState().toast('Anteprima non disponibile', 'err');
         setTimeout(() => { if (useApp.getState().player.current?.videoId === vid) next(); }, 800);
       })
@@ -440,6 +447,9 @@ export default function PlayerBar() {
       if (delta > 0 && delta <= 2) l.played += delta;
       l.last = a.currentTime;
       if (Number.isFinite(a.duration)) l.dur = a.duration;
+      // 30s di riproduzione reale = catena sana: lo streak di errori si azzera
+      // (un URL gated che muore dopo pochi secondi NON conta come successo).
+      if (l.played >= 30 && failStreak.current) failStreak.current = 0;
     }
     const s = useApp.getState();
     const d = a.duration;
@@ -460,6 +470,7 @@ export default function PlayerBar() {
     const a = e.currentTarget;
     if (a !== el()) return; // l'elemento in fade-out non comanda
     if (manXf.current >= 0) return; // il brano nuovo sta già entrando: non riavviare il vecchio
+    failStreak.current = 0; // brano finito: la catena di errori è spezzata
     const s = useApp.getState();
     // Sleep timer "a fine brano": il brano finisce → pausa qui, niente next/radio
     if (s.sleepEndOfTrack) {
@@ -502,16 +513,27 @@ export default function PlayerBar() {
     }).catch(() => {
       const st = useApp.getState();
       if (st.player.current?.videoId !== vid) return;
-      if (st.player.queue.length > 1) {
-        st.toast('Errore di riproduzione — passo al brano successivo', 'err');
-        setTimeout(() => useApp.getState().next(), 800);
-      } else st.toast('Errore di riproduzione', 'err');
+      errOrSkip();
     });
+    return true;
+  };
+
+  // Conta un fallimento di riproduzione; al 3° consecutivo (nessun brano ha
+  // suonato ≥30s nel frattempo) ferma il cascade: pausa + messaggio chiaro.
+  // Ritorna true se il freno è scattato (il caller non deve chiamare next()).
+  const notePlayFailure = (): boolean => {
+    failStreak.current += 1;
+    if (failStreak.current < 3) return false;
+    failStreak.current = 0;
+    const s = useApp.getState();
+    if (s.player.playing) s.toggle();
+    s.toast('Riproduzione in pausa — connessione o stream in difficoltà, riprova tra poco', 'err');
     return true;
   };
 
   const errOrSkip = () => {
     const s = useApp.getState();
+    if (notePlayFailure()) return;
     if (s.player.queue.length > 1) {
       s.toast('Errore di riproduzione — passo al brano successivo', 'err');
       setTimeout(() => useApp.getState().next(), 800);

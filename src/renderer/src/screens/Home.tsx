@@ -10,7 +10,7 @@ import { CoverImg } from '../components/CoverImg';
 import { SectionTitle, Empty, SkeletonCards, Skeleton, ProgressBar, LoadingState } from '../components/common';
 import { STATIONS } from '../../../shared/types';
 import type { AppStats, TrackRef, OnboardArtist, SuggestedTrack } from '../../../shared/types';
-import { offlineSuggest } from '../offlineRec';
+import { offlineSuggest, cleanTags } from '../offlineRec';
 import { queuePlOp } from '../pendingSync';
 
 const CACHE_TTL = 10 * 60 * 1000; // Home: cache 10 min — il refetch dei suggerimenti è lento
@@ -195,9 +195,10 @@ export default function Home() {
         api().yt.charts(useApp.getState().settings?.country ?? 'IT').catch(() => []),
       ]);
       const st = useApp.getState();
-      // PC spento e niente suggerimenti: li approssimo da libreria+like
-      // cachate (senza toccare homeCache: a PC acceso tornano quelli veri)
-      setSuggLocal(s.length ? [] : offlineSuggest(st.library, st.remoteLikeList).slice(0, 16));
+      // PC spento e niente suggerimenti: li genero offline da gusti cachati
+      // + upNext diretto (senza toccare homeCache: a PC acceso tornano i veri)
+      if (s.length) setSuggLocal([]);
+      else void offlineSuggest(st.library, st.remoteLikeList).then((v) => setSuggLocal(v.slice(0, 16))).catch(() => {});
       setHomeCache(s.slice(0, 16), c.slice(0, 12));
     } finally {
       setLoading(false);
@@ -210,15 +211,14 @@ export default function Home() {
     void api().library.recent(10).then(setRecent).catch(() => {});
     // Tag/generi del profilo per la shelf "I tuoi mix"
     void Promise.all([api().library.taste('tag'), api().library.taste('genre')]).then(([tags, genres]) => {
-      const junk = new Set(['seen live', 'favorites', 'favourite', 'favorite', 'love', 'hate', 'my favorite', 'male vocalists', 'female vocalists', 'all', 'misc', 'other', 'various']);
-      const all = [...tags, ...genres].filter((r) => r.weight > 0.3 && !junk.has(r.value)).sort((a, b) => b.weight - a.weight);
-      setMixTags([...new Set(all.map((r) => r.value))].slice(0, 6));
+      const all = [...tags, ...genres].filter((r) => r.weight > 0.3).sort((a, b) => b.weight - a.weight);
+      setMixTags(cleanTags(all.map((r) => r.value)).slice(0, 6));
     }).catch(() => {
       // PC spento: "I tuoi mix" dai generi della libreria cachata
       const count = new Map<string, number>();
       for (const t of useApp.getState().library)
         if (t.genre) count.set(t.genre, (count.get(t.genre) ?? 0) + 1 + (t.liked ? 2 : 0));
-      setMixTags([...count.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g).slice(0, 6));
+      setMixTags(cleanTags([...count.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g)).slice(0, 6));
     });
   }, [library.length]);
 

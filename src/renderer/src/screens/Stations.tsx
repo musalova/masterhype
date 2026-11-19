@@ -8,7 +8,7 @@ import { SectionTitle, Empty, LoadingState } from '../components/common';
 import TrackRow from '../components/TrackRow';
 import { STATIONS } from '../../../shared/types';
 import type { StationDef, TrackRef } from '../../../shared/types';
-import { cachedAuto, cacheAuto, offlineStation, offlineRadio } from '../offlineRec';
+import { cachedAuto, cacheAuto, offlineStation, offlineRadio, cleanTags } from '../offlineRec';
 import { pcGone } from '../remote';
 
 const GROUPS: { id: StationDef['group']; title: string; sub: string }[] = [
@@ -37,12 +37,6 @@ function StationCard({ s, i }: { s: StationDef; i: number }) {
     </motion.button>
   );
 }
-
-// Tag Last.fm che non sono generi veri: mai proporli come radio
-const JUNK_TAGS = new Set([
-  'seen live', 'favorites', 'favourite', 'favorite', 'love', 'hate', 'my favorite',
-  'male vocalists', 'female vocalists', 'all', 'misc', 'other', 'various',
-]);
 
 // Radio di genere generata dai tuoi tag: "Radio italian rock", "Radio 90s"…
 function GenreRadioChip({ tag, i }: { tag: string; i: number }) {
@@ -107,7 +101,7 @@ function StationDetail({ sel }: { sel: StationSel }) {
       const t = cachedAuto<TrackRef[]>(ck)
         ?? await (sel.kind === 'station'
           ? offlineStation(sel.id, s.library, s.remoteLikeList)
-          : offlineRadio(sel.radioKind, sel.value)).catch(() => []);
+          : offlineRadio(sel.radioKind, sel.value, s.library, s.remoteLikeList)).catch(() => []);
       setTracks(t ?? []);
       if (!t?.length) toast(`Stazione non disponibile — ${pcGone()} e nessuna traccia trovata`, 'info');
     } finally {
@@ -181,16 +175,16 @@ export default function Stations() {
     // Tag Last.fm se ci sono; altrimenti i generi ID3 dei file scaricati
     void Promise.all([api().library.taste('tag'), api().library.taste('genre')]).then(([tags, genres]) => {
       const all = [...tags, ...genres]
-        .filter((r) => r.weight > 0.3 && !JUNK_TAGS.has(r.value))
+        .filter((r) => r.weight > 0.3)
         .sort((a, b) => b.weight - a.weight);
-      setMyTags([...new Set(all.map((r) => r.value))].slice(0, 10));
+      setMyTags(cleanTags(all.map((r) => r.value)).slice(0, 10));
     }).catch(() => {
       // PC spento: i chip "radio di genere" si ricavano dai generi della
       // libreria cachata — stesso effetto, senza il motore dei gusti.
       const lib = useApp.getState().library;
       const count = new Map<string, number>();
       for (const t of lib) if (t.genre) count.set(t.genre, (count.get(t.genre) ?? 0) + 1 + (t.liked ? 2 : 0));
-      setMyTags([...count.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g).slice(0, 10));
+      setMyTags(cleanTags([...count.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g)).slice(0, 10));
     });
   }, []);
 

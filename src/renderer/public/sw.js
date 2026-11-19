@@ -66,8 +66,12 @@ async function proxyPc(req, u) {
   }
   headers.set('X-MH-Token', auth.token);
   try {
-    return await fetch(auth.base + path, { method: req.method, headers });
+    // signal: propaga l'abort del client (seek/cambio brano di <audio>) alla
+    // fetch verso il PC — senza, ogni abort lasciava uno stream zombie che
+    // continuava a scaricare il file intero sprecando banda e socket LAN.
+    return await fetch(auth.base + path, { method: req.method, headers, signal: req.signal });
   } catch {
+    // Client abortito: la risposta è ignorata — conta solo che l'upstream sia morto.
     return new Response('PC irraggiungibile', { status: 502 });
   }
 }

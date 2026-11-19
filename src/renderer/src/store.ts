@@ -514,7 +514,7 @@ export const useApp = create<AppState>((set, get) => ({
       if (tracks.length) cacheAuto(`radio:${kind}:${value}`, tracks);
     } catch {
       tracks = cachedAuto<TrackRef[]>(`radio:${kind}:${value}`)
-        ?? await offlineRadio(kind, value).catch(() => []);
+        ?? await offlineRadio(kind, value, get().library, get().remoteLikeList).catch(() => []);
     }
     if (!tracks?.length) { get().toast('Radio non disponibile ora', 'err'); return; }
     newQueueContext();

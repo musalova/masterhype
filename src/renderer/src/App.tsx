@@ -189,7 +189,11 @@ export default function App() {
       try { localStorage.setItem('mh-settings-cache', JSON.stringify(s)); } catch { /* quota */ }
     });
     // Rientro in Wi-Fi / PC riacceso: risincronizza preferenze e memoria
-    // condivisa (libreria, like, tracklist CD, coda se il player è fermo)
+    // condivisa (libreria, like, tracklist CD, coda se il player è fermo).
+    // Throttle: su Wi-Fi ballerina ogni flap SSE scatenava un burst intero
+    // (loadLibrary = JSON completo) che affamava lo streaming in corso —
+    // le code offline si drenano SEMPRE, i reload pesanti al massimo 1×/60s.
+    let lastResync = 0;
     const resync = () => {
       void syncPrefs().then(async () => {
         const s = useApp.getState();
@@ -198,6 +202,16 @@ export default function App() {
         // Telemetria dal campo: issue e campioni cascata raccolti offline
         // risalgono al PC (errori applicativi → retry budget, poi scarto)
         void drainFieldDiag().catch(() => {});
+        // Il feedback del drain non dipende dal throttle: cosa è partito o
+        // è stato scartato va detto anche quando i reload sotto si saltano.
+        if (dr?.sent) s.toast(`Sincronizzato col PC — ${dr.sent} azioni recuperate`, 'info');
+        if (dr?.resurrected) s.toast(`${dr.resurrected} playlist ripristinate: eliminate sul PC ma modificate qui`, 'info');
+        if (dr?.dropped) s.toast(`${dr.dropped} modifiche offline non applicate — l'elemento non esiste più sul PC`, 'err');
+        // Reload pesanti (settings, libreria INTERA, like, downloads): se il
+        // drain ha inviato qualcosa la rilettura è obbligatoria; altrimenti
+        // su flap ravvicinati si salta — i dati in UI hanno ≤60s.
+        if (Date.now() - lastResync < 60_000 && !dr?.sent) return;
+        lastResync = Date.now();
         // PRIMA il drain (le patch settings accodate sono state applicate),
         // POI la lettura canonica: include anche i cambi fatti da altri
         // dispositivi mentre eravamo offline (gli eventi SSE erano giù).
@@ -211,9 +225,7 @@ export default function App() {
           if (lib) { s.pendingCd.delete(vid); s.addToCd(lib, true); }
         }
         if (!s.player.current) s.restorePlayerQueue(); // solo se non sta suonando
-        s.toast(dr?.sent ? `Sincronizzato col PC — ${dr.sent} azioni recuperate` : 'Sincronizzato col PC', 'info');
-        if (dr?.resurrected) s.toast(`${dr.resurrected} playlist ripristinate: eliminate sul PC ma modificate qui`, 'info');
-        if (dr?.dropped) s.toast(`${dr.dropped} modifiche offline non applicate — l'elemento non esiste più sul PC`, 'err');
+        s.toast('Sincronizzato col PC', 'info');
       });
     };
     const offReconnect = onReconnected(resync);

@@ -448,10 +448,10 @@ const cleanErr = (se?: string) =>
   (se ?? '').split('\n').filter((l) => /error|fail|unavailable|forbidden/i.test(l)).join(' ').slice(0, 200)
   || se?.slice(-200) || '';
 
-function probeStream(videoId: string, args: string[], host = 'music.youtube.com'): Promise<string> {
+function probeStream(videoId: string, args: string[], host = 'music.youtube.com', timeoutMs = 30_000): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     execFile(ytDlpPath(), [...args, '-g', `https://${host}/watch?v=${videoId}`],
-      { windowsHide: true, timeout: 30000 }, (e, so, se) => {
+      { windowsHide: true, timeout: timeoutMs }, (e, so, se) => {
         const u = so.trim().split('\n')[0];
         if (e || !u.startsWith('http')) reject(new Error(cleanErr(se) || 'stream url non disponibile'));
         else resolve(u);
@@ -459,7 +459,12 @@ function probeStream(videoId: string, args: string[], host = 'music.youtube.com'
   });
 }
 
-export async function streamUrl(videoId: string): Promise<string> {
+// Budget residuo per una risoluzione con deadline: il client remoto timeouta
+// la chiamata playStream a 30s — lavorare oltre significherebbe bruciare
+// yt-dlp/heal su una risposta che il telefono non aspetta più.
+const budgetLeft = (deadline?: number): number => (deadline == null ? 30_000 : Math.max(1_000, deadline - Date.now()));
+
+export async function streamUrl(videoId: string, deadline?: number): Promise<string> {
   const hit = urlCache.get(videoId);
   if (hit && hit.exp > Date.now()) return hit.url;
   // Tracce Audius: l'endpoint /stream risponde 302 verso il file audio —
@@ -467,7 +472,7 @@ export async function streamUrl(videoId: string): Promise<string> {
   // e ffmpeg seguono il redirect da soli).
   if (videoId.startsWith('audius:')) {
     const u = audiusStreamUrl(videoId.slice(7));
-    const res = await fetch(u, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(10000) });
+    const res = await fetch(u, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(Math.min(10_000, budgetLeft(deadline))) });
     if (![200, 301, 302, 303, 307, 308].includes(res.status))
       throw new Error(`audius stream ${res.status}`);
     cacheSet(urlCache, videoId, { url: u, exp: Date.now() + 5 * 3600_000 });
@@ -475,13 +480,40 @@ export async function streamUrl(videoId: string): Promise<string> {
   }
   let lastErr = 'stream url non disponibile';
   for (const args of STREAM_TRIES) {
+    const left = deadline == null ? 30_000 : deadline - Date.now();
+    if (left <= 0) { lastErr = 'risoluzione stream fuori tempo'; break; }
     try {
-      const url = await probeStream(videoId, args);
+      const url = await probeStream(videoId, args, 'music.youtube.com', Math.min(30_000, left));
       cacheSet(urlCache, videoId, { url, exp: Date.now() + 5 * 3600_000 });
       return url;
     } catch (e) { lastErr = e instanceof Error ? e.message : String(e); }
   }
   throw new Error(lastErr);
+}
+
+// Un URL googlevideo risolto non è detto che suoni: il "gating" (sps=2)
+// serve solo il primo ~1MB, ogni range a offset>0 dà 403 — l'<audio> muore
+// a metà brano e il telefono saltava traccia dopo traccia. Stessa disciplina
+// della cascata del telefono (probeStreamUrl in direct.ts): probe sull'
+// ULTIMO byte — se risponde, l'intero file è servibile.
+const STREAM_VALIDATE_TIMEOUT = 6_000;
+async function validateStreamUrl(u: string): Promise<boolean> {
+  const probe = (range: string) =>
+    fetch(u, { headers: { Range: range }, signal: AbortSignal.timeout(STREAM_VALIDATE_TIMEOUT) });
+  try {
+    let clen = Number(new URL(u).searchParams.get('clen'));
+    if (!(clen > 2)) {
+      const h = await probe('bytes=0-0');
+      await h.arrayBuffer().catch(() => {});
+      if (h.status !== 206) return false;
+      const m = /\/(\d+)\s*$/.exec(h.headers.get('content-range') ?? '');
+      clen = m ? +m[1] : 0;
+      if (!(clen > 2)) return false;
+    }
+    const r = await probe(`bytes=${clen - 1}-${clen - 1}`);
+    await r.arrayBuffer().catch(() => {});
+    return r.status === 206 || r.status === 200;
+  } catch { return false; }
 }
 
 // Stream video SOLO VIDEO ≤720p per la vista Now Playing — gira muto
@@ -518,13 +550,21 @@ export async function videoUrl(videoId: string, maxH = 720): Promise<string> {
 
 const HEAL_CANDIDATES = 4;
 
-async function healStream(videoId: string, artist: string, title: string, cause?: string): Promise<{ url: string; videoId: string }> {
+// Risolve + valida un videoId (streamUrl seguito dalla probe ultimo-byte).
+// Il resolver vive in playStream e condivide il deadline con healStream:
+// il client remoto timeouta la chiamata a 30s — oltre il budget il lavoro
+// su yt-dlp/search/Audius diventava orfano mentre il telefono saltava il brano.
+type StreamResolver = (vid: string, art?: string, tit?: string) => Promise<string>;
+
+async function healStream(videoId: string, artist: string, title: string, cause: string | undefined,
+  resolve: StreamResolver, deadline: number): Promise<{ url: string; videoId: string }> {
   const alts = (await searchSongs(`${artist} ${title}`.trim()).catch(() => []))
     .filter((t) => t.videoId !== videoId && !isBadStream(t.videoId))
     .slice(0, HEAL_CANDIDATES);
   for (const alt of alts) {
+    if (Date.now() >= deadline) break;
     try {
-      const url = await streamUrl(alt.videoId);
+      const url = await resolve(alt.videoId, alt.artist, alt.title);
       report('play', { artist, title, videoId: alt.videoId, healed: true,
         message: `riparato: ${videoId} → ${alt.videoId}${cause ? ` (${cause})` : ''}` });
       return { url, videoId: alt.videoId };
@@ -534,8 +574,9 @@ async function healStream(videoId: string, artist: string, title: string, cause?
   // stretto artista+titolo — meglio fallire che suonare il brano sbagliato.
   for (const m of await audiusSearch(`${artist} ${title}`).catch(() => [])) {
     if (!audiusMatch(m.artist, m.title, artist, title)) continue;
+    if (Date.now() >= deadline) break;
     try {
-      const url = await streamUrl(`audius:${m.id}`); // valida che lo stream esista
+      const url = await resolve(`audius:${m.id}`, artist, title); // valida che lo stream esista
       report('play', { artist, title, videoId: `audius:${m.id}`, healed: true,
         message: `riparato via Audius: ${videoId} → ${m.id}${cause ? ` (${cause})` : ''}` });
       return { url, videoId: `audius:${m.id}` };
@@ -545,22 +586,37 @@ async function healStream(videoId: string, artist: string, title: string, cause?
 }
 
 // Risolve l'URL audio per un brano, auto-riparandolo se lo stream è difettoso.
+const PLAY_RESOLVE_BUDGET = 25_000; // < timeout client (30s): mai lavoro orfano
 export async function playStream(videoId: string, artist: string, title: string): Promise<{ url: string; videoId: string; healed: boolean }> {
+  const deadline = Date.now() + PLAY_RESOLVE_BUDGET;
   const done = (url: string, vid: string, healed: boolean) => {
     analyzeLoudness(vid, url); // in background: misura per la normalizzazione volume
     return { url, videoId: vid, healed };
   };
+  // streamUrl + validazione "suona davvero": un URL gated viene scartato e
+  // marcato, così heal prova subito un candidato diverso invece di servirlo.
+  const resolve: StreamResolver = async (vid, art, tit) => {
+    if (Date.now() >= deadline) throw new Error('risoluzione stream fuori tempo');
+    const u = await streamUrl(vid, deadline);
+    if (!vid.startsWith('audius:') && !(await validateStreamUrl(u))) {
+      urlCache.delete(vid);
+      markBadStream(vid, art ?? artist, tit ?? title);
+      throw new Error('URL stream non servibile (probe ultimo byte fallita)');
+    }
+    return u;
+  };
+  const heal = (cause?: string) => healStream(videoId, artist, title, cause, resolve, deadline);
   if (isBadStream(videoId)) {
-    const h = await healStream(videoId, artist, title, 'stream già noto difettoso');
+    const h = await heal('stream già noto difettoso');
     return done(h.url, h.videoId, true);
   }
   try {
-    return done(await streamUrl(videoId), videoId, false);
+    return done(await resolve(videoId), videoId, false);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     markBadStream(videoId, artist, title);
     report('play', { message: msg, artist, title, videoId });
-    const h = await healStream(videoId, artist, title, msg);
+    const h = await heal(msg);
     return done(h.url, h.videoId, true);
   }
 }

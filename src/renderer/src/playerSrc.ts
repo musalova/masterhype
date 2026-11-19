@@ -24,13 +24,17 @@ export const srcOf = async (t: TrackRef & { local?: boolean }, skipPc = false): 
     if (!isRemote()) return { url, videoId: t.videoId, healed: false, local: true };
     // Finestra probe: isOnline() può essere ancora true col PC appena morto —
     // un audio element ci metterebbe ~20-60s a dichiarare l'errore. Ping
-    // range 0-0 (3s): QUALSIASI risposta HTTP = host vivo (anche 404: la
-    // gestione errori del brano resta la stessa); nessuna risposta = PC giù →
-    // kick del probe ufficiale + risoluzione diretta, senza i 10s di call().
+    // range 0-0 (3s): serve una risposta ok/404 dal PC VERO — il service
+    // worker risponde 503/502 (auth mancante, PC giù) anche con fetch
+    // riuscita, e contava come "vivo" portando <audio> su un URL morto.
+    // Il 404 è una risposta del server (traccia mancante = errore normale
+    // del brano); probe fallita/non-ok = PC non affidabile → kick del
+    // probe ufficiale + risoluzione diretta, senza i 10s di call().
     const ac = new AbortController();
     const tmr = setTimeout(() => ac.abort(), 3000);
     try {
-      await fetch(url, { headers: { Range: 'bytes=0-0' }, signal: ac.signal });
+      const res = await fetch(url, { headers: { Range: 'bytes=0-0' }, signal: ac.signal });
+      if (!res.ok && res.status !== 404) throw new Error(`probe ${res.status}`);
       return { url, videoId: t.videoId, healed: false, local: true };
     } catch {
       retryNow(); // aggiorna isOnline() reale; intanto non fidiamoci più del PC

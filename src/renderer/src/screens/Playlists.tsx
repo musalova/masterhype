@@ -8,7 +8,7 @@ import TrackRow from '../components/TrackRow';
 import { CoverImg } from '../components/CoverImg';
 import { SectionTitle, Empty, LoadingState } from '../components/common';
 import type { Playlist, TrackRef, LibraryTrack } from '../../../shared/types';
-import { cachedAuto, cacheAuto, offlineAutoplaylist } from '../offlineRec';
+import { cachedAuto, cacheAuto, offlineAutoplaylist, cleanTags } from '../offlineRec';
 
 const KIND_LABEL: Record<Playlist['kind'], string> = {
   'lista': 'Playlist',
@@ -74,14 +74,13 @@ export default function Playlists() {
       setTopArtists([...count.entries()].sort((a, b) => b[1] - a[1]).map(([a]) => a).slice(0, 2));
     });
     void Promise.all([api().library.taste('tag'), api().library.taste('genre')]).then(([tags, genres]) => {
-      const junk = new Set(['seen live', 'favorites', 'favourite', 'favorite', 'love', 'hate', 'my favorite', 'male vocalists', 'female vocalists', 'all', 'misc', 'other', 'various']);
-      const all = [...tags, ...genres].filter((r) => r.weight > 0.3 && !junk.has(r.value)).sort((a, b) => b.weight - a.weight);
-      setTopTags([...new Set(all.map((r) => r.value))].slice(0, 4));
+      const all = [...tags, ...genres].filter((r) => r.weight > 0.3).sort((a, b) => b.weight - a.weight);
+      setTopTags(cleanTags(all.map((r) => r.value)).slice(0, 4));
     }).catch(() => {
       const lib = useApp.getState().library;
       const count = new Map<string, number>();
       for (const t of lib) if (t.genre) count.set(t.genre, (count.get(t.genre) ?? 0) + 1 + (t.liked ? 2 : 0));
-      setTopTags([...count.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g).slice(0, 4));
+      setTopTags(cleanTags([...count.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g)).slice(0, 4));
     });
   }, []);
   // Deep-link dalla Home/sidebar: quick-tile → lista autogenerata, voce → playlist utente

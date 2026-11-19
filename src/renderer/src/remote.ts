@@ -780,15 +780,28 @@ async function probeRemoteHealth(): Promise<void> {
   if (!conf) return;
   // NIENTE setOnline(false) durante i tentativi: nel giro (qualche secondo) il
   // banner offline lampeggerebbe — si marca offline solo se falliscono TUTTI.
-  for (const addr of probeOrder(conf)) {
-    const info = await fetchInfo(addr);
-    if (info === 'auth') { resetToPairing(); return; }
-    if (!info) continue;
+  // Base (o primo per priorità) da solo, poi gli alts TUTTI in parallelo:
+  // un failover seriale costava N×5s quando fra gli alts ci sono indirizzi
+  // morti (schede virtuali del PC); ora il primo che risponde vince in ~5s,
+  // con la stessa preferenza d'ordine di probeOrder.
+  const order = probeOrder(conf);
+  const first = await fetchInfo(order[0]);
+  if (first === 'auth') { resetToPairing(); return; }
+  let winner: string | null = first ? order[0] : null;
+  let info: { alts?: unknown; updateFeed?: unknown } | null = first;
+  if (!winner && order.length > 1) {
+    const alts = order.slice(1);
+    const results = await Promise.all(alts.map(fetchInfo));
+    if (results.includes('auth')) { resetToPairing(); return; }
+    const i = results.findIndex((r) => r && r !== 'auth');
+    if (i >= 0) { winner = alts[i]; info = results[i] as typeof info; }
+  }
+  if (winner) {
     // Il primo che risponde diventa base; gli altri restano candidati (il
     // vecchio base incluso: se torna raggiungibile il failover lo riusa).
-    if (addr !== conf.base) {
-      const alts: string[] = [...new Set<string>([conf.base, ...(conf.alts ?? [])])].filter((a) => a !== addr);
-      conf = { ...conf, base: addr, alts };
+    if (winner !== conf.base) {
+      const alts: string[] = [...new Set<string>([conf.base, ...(conf.alts ?? [])])].filter((a) => a !== winner);
+      conf = { ...conf, base: winner, alts };
       try { localStorage.setItem(CONF_KEY, JSON.stringify(conf)); } catch { /* */ }
       if (es) { es.close(); es = null; } // es poteva restare CONNECTING sul base morto
       // Il service worker proxyizza /__pc/* verso conf.base: senza questo
@@ -797,12 +810,15 @@ async function probeRemoteHealth(): Promise<void> {
       swAnnounce();
     }
     setOnline(true);
-    learnAlts(info.alts);
-    learnFeed(info.updateFeed);
+    learnAlts(info!.alts);
+    learnFeed(info!.updateFeed);
     openEvents();
     return;
   }
-  // Nessun indirizzo raggiungibile: SOLO ORA siamo offline certi → backoff
+  // Nessun indirizzo raggiungibile: SOLO ORA siamo offline certi → backoff.
+  // Chiudiamo anche un EventSource rimasto aperto: è uno zombie (il probe ha
+  // appena fallito ovunque) e lasciarlo impedirebbe i retry di ensureEvents.
+  if (es) { es.close(); es = null; }
   setOnline(false);
   scheduleReconnect();
 }
@@ -818,7 +834,11 @@ export function retryNow(): void {
 }
 if (typeof window !== 'undefined') {
   window.addEventListener('online', retryNow);
-  window.addEventListener('offline', () => setOnline(false));
+  // 'offline' del browser = "nessuna connettività" secondo l'OS — NON "PC
+  // irraggiungibile" (Wi-Fi senza internet, cambio rete, VPN): un mark
+  // cieco spegneva le call verso un PC vivo e, con SSE ancora aperto,
+  // nessun probe lo correggeva (offline bloccato). Il probe decide.
+  window.addEventListener('offline', () => { void probeRemoteHealth(); });
   // Handle diagnostico per gli audit CDP (come __app/__mhApi): stato
   // standalone/pairing leggibile e saveRemoteConf chiamabile dai test.
   (window as unknown as { __mhRemote: unknown }).__mhRemote = {

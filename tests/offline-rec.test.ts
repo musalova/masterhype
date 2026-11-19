@@ -34,13 +34,14 @@ describe('fallback offline — brani piaciuti', () => {
 });
 
 describe('fallback offline — suggest', () => {
-  it('propone i più ascoltati e i like', () => {
+  it('propone i più ascoltati e i like', async () => {
     const library = [
       lib({ id: 1, videoId: 'hot', playCount: 50 }),
       lib({ id: 2, videoId: 'cold', playCount: 0 }),
       lib({ id: 3, videoId: 'love', liked: true }),
     ];
-    const s = offlineSuggest(library, [rl('ext')]);
+    // rete assente in test → upNext fallisce e restano le certezze locali
+    const s = await offlineSuggest(library, [rl('ext')]);
     const ids = s.map((t) => t.videoId);
     expect(ids).toContain('hot');
     expect(ids).toContain('love');
@@ -48,8 +49,8 @@ describe('fallback offline — suggest', () => {
     expect(new Set(ids).size).toBe(ids.length); // niente duplicati
     for (const t of s) { expect(t.reason).toBeTruthy(); expect(t.score).toBeGreaterThan(0); }
   });
-  it('libreria vuota e nessun like → lista vuota, non crash', () => {
-    expect(offlineSuggest([], [])).toEqual([]);
+  it('libreria vuota e nessun like → lista vuota, non crash', async () => {
+    expect(await offlineSuggest([], [])).toEqual([]);
   });
 });
 

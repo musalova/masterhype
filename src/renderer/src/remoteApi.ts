@@ -12,7 +12,7 @@ import {
 } from './remote';
 import { enqueueIssue } from './fieldDiag';
 import {
-  directSearch, directStream, directPlayStream, directVideoUrl, directSuggestions,
+  directSearch, directStream, directPlayStream, directVideoUrl,
   directLyrics, directUpNext, directCharts, directAlbumTracks, directArtistTop,
   directArtistPage, directPlaylistTracks,
 } from './direct';
@@ -25,6 +25,21 @@ async function ytCall<T>(remote: () => Promise<T>, direct: () => Promise<T>): Pr
   if (!isOnline()) return direct();
   try { return await remote(); }
   catch (e) { return isOnline() ? Promise.reject(e) : direct(); }
+}
+
+// Solo per la RISOLUZIONE DEGLI STREAM (url da suonare): la cascata diretta
+// del telefono (validazione ultimo byte, PoToken, client multipli) è più
+// robusta della risoluzione yt-dlp del PC. Se il PC è vivo ma la sua
+// risoluzione è rotta/lenta (yt-dlp datato, IP flaggato, timeout), riprovare
+// lo stesso percorso era uno skip garantito a catena — il telefono prova il
+// diretto e il fallimento PC resta in telemetria (kind 'pc-stream').
+async function ytCallStream<T>(remote: () => Promise<T>, direct: () => Promise<T>): Promise<T> {
+  if (!isOnline()) return direct();
+  try { return await remote(); }
+  catch (e) {
+    enqueueIssue('pc-stream', { message: (e instanceof Error ? e.message : String(e)).slice(0, 200) });
+    return direct();
+  }
 }
 
 // cached: dati di sola lettura (playlist, like remoti) — offline serve l'ultima
@@ -108,11 +123,14 @@ export const remoteApi: MasterHypeApi = {
     search: (q, expand) => ytCall(() => call(IPC.search, q, expand), () => directSearch(q, expand)),
     // Il PC vecchio può non avere il canale → 404 applicativo → []; il
     // diretto copre PC spento e server datati.
-    suggest: (q) => ytCall(() => call<string[]>(IPC.searchSuggest, q), () => directSuggestions(q)).catch(() => []),
-    streamUrl: (v) => ytCall(() => call(IPC.streamUrl, v), () => directStream(v)),
-    playStream: (v, a, t) => ytCall(() => call(IPC.playStream, v, a, t), () => directPlayStream(v, a, t)),
+    // Il PC antepone gli artisti del profilo (handlers.searchSuggest); a PC
+    // spento la replica è localSuggestions — stesso merge, fonti locali.
+    suggest: (q) => ytCall(() => call<string[]>(IPC.searchSuggest, q),
+      async () => (await import('./offlineRec')).localSuggestions(q)).catch(() => []),
+    streamUrl: (v) => ytCallStream(() => call(IPC.streamUrl, v), () => directStream(v)),
+    playStream: (v, a, t) => ytCallStream(() => call(IPC.playStream, v, a, t), () => directPlayStream(v, a, t)),
     searchPick: (q, t) => call(IPC.searchPick, q, t), // logica del PC: serve il PC
-    videoUrl: (v, maxH) => ytCall(() => call(IPC.videoUrl, v, maxH), () => directVideoUrl(v, maxH)),
+    videoUrl: (v, maxH) => ytCallStream(() => call(IPC.videoUrl, v, maxH), () => directVideoUrl(v, maxH)),
     loudness: (v) => ytCall(() => call(IPC.loudness, v), () => Promise.resolve(null)),
     lyrics: (a, t, d) => ytCall(() => call(IPC.lyrics, a, t, d), () => directLyrics(a, t, d)),
     upNext: (v) => ytCall(() => call(IPC.upNext, v), () => directUpNext(v)),

@@ -1,7 +1,7 @@
 import { STATIONS } from '../../shared/types';
 import type { AssistantRequest, AssistantResult, LibraryTrack, RemoteLike, SuggestedTrack, TrackRef, TrendItem } from '../../shared/types';
 import { myUserId, isStandalone } from './remote';
-import { localTaste, localSkipKeys, trackBaseKey } from './localData';
+import { localTaste, mergeTaste, localSkipKeys, trackBaseKey } from './localData';
 import { normText, trackKey } from '../../shared/taste';
 
 // Approssimazioni locali delle funzioni "taste" che normalmente calcola il PC
@@ -36,6 +36,25 @@ export function cachedTrends(): TrendItem[] | null {
 }
 export function cacheTrends(items: TrendItem[]): void {
   try { if (items.length) localStorage.setItem(`mh-trends-cache:u${myUserId()}`, JSON.stringify(items)); } catch {}
+}
+
+// Tag Last.fm che non sono generi veri: mai proporli come mix/radio.
+// Unica fonte — Home, Stazioni e Playlist filtravano ciascuna la sua copia.
+export const JUNK_TAGS = new Set([
+  'seen live', 'favorites', 'favourite', 'favorite', 'love', 'hate', 'my favorite',
+  'male vocalists', 'female vocalists', 'all', 'misc', 'other', 'various',
+]);
+// Filtra una lista di tag/generi: fuori la spazzatura e i duplicati
+// case-insensitive ("Pop" e "pop" non devono apparire due volte).
+export function cleanTags(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    const k = normText(v);
+    if (!k || JUNK_TAGS.has(k) || seen.has(k)) continue;
+    seen.add(k); out.push(v);
+  }
+  return out;
 }
 
 // ---- helpers ----
@@ -78,7 +97,7 @@ const ownedVids = (library: LibraryTrack[]) => new Set(library.map((t) => t.vide
 
 interface LocalTaste { w: Map<string, number>; max: number; blocked: string[]; neg: Set<string> }
 function tasteSnapshot(): LocalTaste {
-  const rows = localTaste('artist');
+  const rows = tasteRowsOffline('artist');
   return {
     w: new Map(rows.map((r) => [normText(r.value), r.weight])),
     max: Math.max(1, ...rows.map((r) => Math.max(0, r.weight))),
@@ -103,13 +122,62 @@ function tasteOrder(list: TrackRef[]): TrackRef[] {
     .map((x) => x.x);
 }
 
+// ---- Profilo gusti completo, usabile a PC spento ----
+// mergeTaste = ultima copia del PC (cache mh-taste-cache per kind) + segnali
+// raccolti offline nel frattempo. Senza copia PC (mai pairato / standalone
+// puro) si ricostruisce tutto da libreria+segnali locali. I suggerimenti
+// autonomi usano SEMPRE questa vista — non solo la libreria cachata.
+type TasteRow = { kind: string; value: string; weight: number };
+export function tasteRowsOffline(kind: 'artist' | 'tag' | 'genre'): TasteRow[] {
+  const read = (k: string): TasteRow[] => {
+    try {
+      const s = localStorage.getItem(`mh-taste-cache:u${myUserId()}:${k}`);
+      const j = s ? JSON.parse(s) : null;
+      return Array.isArray(j) ? j as TasteRow[] : [];
+    } catch { return []; }
+  };
+  const base = [...read(kind), ...read('all')].filter((r) => r?.kind === kind);
+  const merged = mergeTaste(base, kind).filter((r) => r.kind === kind);
+  return merged.length ? merged : localTaste(kind);
+}
+
+// Artisti del profilo che matchano il prefisso digitato — stessa regola del
+// server (handlers[searchSuggest]): prefisso sul nome o su una parola, i più
+// amati prima. Funziona senza rete → i suggerimenti non spariscono MAI.
+export function localSuggestArtists(q: string, limit = 3): string[] {
+  const nq = normText(q.trim());
+  if (!nq) return [];
+  return tasteRowsOffline('artist')
+    .filter((r) => { const v = normText(r.value); return r.weight > 0 && (v.startsWith(nq) || v.split(' ').some((w) => w.startsWith(nq))); })
+    .slice(0, limit)
+    .map((r) => normText(r.value).replace(/\b\p{L}/gu, (c) => c.toUpperCase()));
+}
+
+// Autocomplete completo lato telefono: i TUOI artisti prima dei suggerimenti
+// YouTube (che da soli tirano fuori nomi sconosciuti). La parte locale non
+// può fallire → esiste sempre qualcosa da proporre.
+export async function localSuggestions(q: string): Promise<string[]> {
+  const mine = localSuggestArtists(q);
+  let yt: string[] = [];
+  try { const { directSuggestions } = await import('./direct'); yt = await directSuggestions(q); } catch { /* */ }
+  const nq = normText(q.trim());
+  const seen = new Set(yt.map((s) => normText(s)));
+  return [...mine.filter((m) => !seen.has(normText(m)) && normText(m) !== nq), ...yt].slice(0, 10);
+}
+
 /** arricchimento "consigliati": upNext su qualche seme preso dai preferiti/più ascoltati */
 async function upNextPool(seeds: TrackRef[], n = 2): Promise<TrackRef[]> {
+  return (await upNextTagged(seeds, n)).map((x) => x.t);
+}
+
+// Come upNextPool ma conserva l'artista del seme: serve per il "perché te lo
+// propongo" dei suggerimenti (parità col `reason` del motore PC).
+async function upNextTagged(seeds: TrackRef[], n = 2): Promise<{ t: TrackRef; from: string }[]> {
   const { directUpNext } = await import('./direct');
-  const out: TrackRef[] = [];
+  const out: { t: TrackRef; from: string }[] = [];
   for (const s of shuffle(seeds).slice(0, n)) {
     if (!s.videoId) continue;
-    try { out.push(...(await directUpNext(s.videoId))); } catch {}
+    try { for (const t of await directUpNext(s.videoId)) out.push({ t, from: s.artist ?? '' }); } catch {}
   }
   return out;
 }
@@ -124,15 +192,79 @@ async function chartsPool(): Promise<TrackRef[]> {
   try { return await directCharts(); } catch { return []; }
 }
 
+// ---- Pool di scoperta tarato sui gusti ----
+// Prima il grosso della pool erano le classifiche globali: artisti mai visti
+// in cima a ogni lista autonoma. Ora i semi sono i TUOI brani più amati —
+// upNext dà correlati vicini ai gusti, le classifiche restano una quota
+// minore (la novità vera serve ancora, ma non deve dominare).
+async function tasteSeededPool(library: LibraryTrack[], remoteLikes: RemoteLike[], seedsN = 4, chartsN = 12): Promise<TrackRef[]> {
+  const likes = likedTracks(library, remoteLikes);
+  const top = [...library].sort((a, b) => b.playCount - a.playCount).map(toRef);
+  const seeds = shuffle(likes.length ? likes : top).slice(0, seedsN);
+  const [ups, charts] = await Promise.all([upNextPool(seeds, Math.max(2, seedsN - 1)), chartsPool()]);
+  return [...ups, ...charts.slice(0, chartsN)];
+}
+
+// Tracce TUE nel genere richiesto (libreria cachata: il campo genre è
+// valorizzato dai download/tag). Sono i semi dei mix/radio di genere —
+// così "Radio rock" parte da ciò che ascolti davvero, non da "rock hits".
+function genreSeedTracks(genre: string, library: LibraryTrack[]): LibraryTrack[] {
+  const g = normText(genre);
+  if (!g || g.length < 2) return [];
+  return [...library]
+    .filter((t) => {
+      const tg = normText(t.genre ?? '');
+      return !!tg && tg.length >= 2 && (tg === g || tg.includes(g) || g.includes(tg));
+    })
+    .sort((a, b) => (b.liked ? 5 : 0) + b.playCount - ((a.liked ? 5 : 0) + a.playCount));
+}
+
+// Pool "genere X": tuoi brani del genere + correlati upNext sui migliori +
+// una quota di "${genre} hits" per la scoperta. Se la libreria non copre il
+// genere (tag Last.fm senza file locali) resta solo la ricerca — tasteOrder
+// comunque filtra e ordina sui gusti.
+async function genrePool(genre: string, library: LibraryTrack[], remoteLikes: RemoteLike[]): Promise<TrackRef[]> {
+  const own = genreSeedTracks(genre, library).slice(0, 10).map(toRef);
+  const seeds = own.length ? own : likedTracks(library, remoteLikes).slice(0, 4);
+  const [ups, hits] = await Promise.all([upNextPool(seeds, 3), searchPool(`${genre} hits`)]);
+  return [...own, ...ups, ...hits.slice(0, 15)];
+}
+
 // ---- suggest (Home hero) ----
-export function offlineSuggest(library: LibraryTrack[], remoteLikes: RemoteLike[]): SuggestedTrack[] {
+// Suggerimenti VERI anche senza PC: correlati upNext dei brani più amati
+// (novità vicine ai gusti, mai già posseduti) + qualche certezza locale.
+// Cache 30 min: su rete mobile ogni apertura di Home non deve ripagare
+// N chiamate upNext.
+const SUGG_LOCAL_TTL = 30 * 60_000;
+export async function offlineSuggest(library: LibraryTrack[], remoteLikes: RemoteLike[]): Promise<SuggestedTrack[]> {
+  try {
+    const raw = localStorage.getItem(CK('sugg:local'));
+    if (raw) {
+      const c = JSON.parse(raw) as { at?: number; v?: SuggestedTrack[] };
+      if (Date.now() - (c.at ?? 0) < SUGG_LOCAL_TTL && Array.isArray(c.v) && c.v.length) return c.v;
+    }
+  } catch { /* */ }
   const out: SuggestedTrack[] = [];
-  const push = (t: TrackRef, reason: string) => out.push({ ...t, score: 1, reason, sources: ['local'] });
-  for (const t of shuffle([...library].sort((a, b) => b.playCount - a.playCount).slice(0, 8)))
-    push(toRef(t), `tra i tuoi più ascoltati (${t.playCount} play)`);
-  for (const t of shuffle(likedTracks(library, remoteLikes)).slice(0, 8))
-    push(t, 'hai messo mi piace');
-  return dedupe(out) as SuggestedTrack[];
+  const likes = likedTracks(library, remoteLikes);
+  const owned = ownedVids(library);
+  const seeds = shuffle(likes.length ? likes : [...library].sort((a, b) => b.playCount - a.playCount).map(toRef)).slice(0, 6);
+  const tagged = await upNextTagged(seeds, 4).catch(() => [] as { t: TrackRef; from: string }[]);
+  const fromOf = new Map(tagged.map((x) => [x.t, x.from]));
+  for (const t of tasteOrder(tagged.map((x) => x.t))) {
+    if (t.videoId && owned.has(t.videoId)) continue;
+    const from = fromOf.get(t);
+    out.push({ ...t, score: 1, reason: from ? `perché ascolti ${from}` : 'correlato ai tuoi preferiti', sources: ['direct'] });
+  }
+  // Se la rete non dà niente restano le certezze — la shelf non resta vuota.
+  if (out.length < 4) {
+    for (const t of shuffle([...library].sort((a, b) => b.playCount - a.playCount).slice(0, 8)))
+      out.push({ ...toRef(t), score: 1, reason: `tra i tuoi più ascoltati (${t.playCount} play)`, sources: ['local'] });
+    for (const t of shuffle(likes).slice(0, 8))
+      out.push({ ...t, score: 1, reason: 'hai messo mi piace', sources: ['local'] });
+  }
+  const list = dedupe(out) as SuggestedTrack[];
+  if (list.length) cacheAuto('sugg:local', list);
+  return list;
 }
 
 // ---- autoplaylist ----
@@ -142,17 +274,19 @@ export async function offlineAutoplaylist(id: string, library: LibraryTrack[], r
   const owned = ownedVids(library);
 
   const fresh = async (minus = true): Promise<TrackRef[]> => {
-    const pool = [...await chartsPool(), ...await upNextPool(likes.length ? likes : top, 3)];
+    const pool = await tasteSeededPool(library, remoteLikes);
     return minus ? pool.filter((t) => !t.videoId || !owned.has(t.videoId)) : pool;
   };
 
   let list: TrackRef[] = [];
   if (id === 'liked') list = shuffle(likes);
   else if (id === 'top') list = top;
-  else if (id === 'mix') list = shuffle([...likes, ...top.slice(0, 15), ...(await fresh(false)).slice(0, 10)]);
-  else if (id === 'scoperte' || id === 'nuove') list = await fresh(true);
-  else if (id.startsWith('genre:')) list = tasteOrder(await searchPool(`${id.slice(6)} hits`));
-  else if (id.startsWith('artist:')) list = dedupe([...await searchPool(id.slice(7)), ...await upNextPool(likes, 1)]);
+  else if (id === 'mix') list = tasteOrder([...likes, ...top.slice(0, 15), ...(await fresh(false)).slice(0, 10)]);
+  // Scoperte/novità: pool tarata sui gusti e ORDINATA — prima usciva in ordine
+  // grezzo (le classifiche dominavano → artisti sconosciuti in testa).
+  else if (id === 'scoperte' || id === 'nuove') list = tasteOrder(await fresh(true));
+  else if (id.startsWith('genre:')) list = tasteOrder(await genrePool(id.slice(6), library, remoteLikes));
+  else if (id.startsWith('artist:')) list = tasteOrder(dedupe([...await searchPool(id.slice(7)), ...await upNextPool(likes, 1)]));
   return dedupe(list).slice(0, 50);
 }
 
@@ -168,9 +302,9 @@ export async function offlineStation(id: string, library: LibraryTrack[], remote
   let list: TrackRef[];
   if (id === 'preferiti') list = shuffle(likes);
   else if (id === 'classifiche') list = await chartsPool();
-  else if (id === 'per-te') list = shuffle([...likes.slice(0, 20), ...await upNextPool(likes.length ? likes : top, 3)]);
+  else if (id === 'per-te') list = shuffle([...likes.slice(0, 20), ...await upNextPool(likes.length ? likes : top, 4)]);
   else { // 'novita-te' | 'scoperte' | id sconosciuti: novità + correlati ai gusti
-    const pool = [...await chartsPool(), ...await upNextPool(likes.length ? likes : top, 3)];
+    const pool = await tasteSeededPool(library, remoteLikes);
     list = pool.filter((t) => !t.videoId || !owned.has(t.videoId));
   }
   // Il filtro/ordine sui gusti locali replica il TasteCtx del PC:
@@ -178,8 +312,10 @@ export async function offlineStation(id: string, library: LibraryTrack[], remote
   return tasteOrder(list).slice(0, 40);
 }
 
-export async function offlineRadio(kind: 'artist' | 'genre', value: string): Promise<TrackRef[]> {
-  if (kind === 'genre') return tasteOrder(await searchPool(`${value} hits`)).slice(0, 40);
+export async function offlineRadio(kind: 'artist' | 'genre', value: string, library: LibraryTrack[] = [], remoteLikes: RemoteLike[] = []): Promise<TrackRef[]> {
+  // Genere: i semi sono i TUOI brani di quel genere (era "${genre} hits" nudo —
+  // tirava fuori roba generica e artisti sconosciuti).
+  if (kind === 'genre') return tasteOrder(await genrePool(value, library, remoteLikes)).slice(0, 40);
   const found = await searchPool(value);
   const v = normText(value);
   // Il seed tiene ~1/3 della scaletta (parità col PC), interlacciato coi

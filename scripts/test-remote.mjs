@@ -10,11 +10,13 @@
 import { readFileSync, writeFileSync } from 'fs';
 
 const token = JSON.parse(readFileSync(process.env.APPDATA + '/Electron/settings.json', 'utf-8')).remoteToken;
+// Porta override per le istanze dev (settings.json remoto != 48484)
+const port = process.env.MH_PORT ?? '48484';
 
 // Trova la pagina servita dal PC tra i target Chrome
 const targets = await (await fetch('http://127.0.0.1:9223/json/list')).json();
-const page = targets.find((t) => t.type === 'page' && t.url.includes('48484'));
-if (!page) { console.error('FAIL: nessuna pagina :48484 tra i target Chrome'); process.exit(1); }
+const page = targets.find((t) => t.type === 'page' && t.url.includes(`:${port}`));
+if (!page) { console.error(`FAIL: nessuna pagina :${port} tra i target Chrome`); process.exit(1); }
 
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((r) => (ws.onopen = r));
@@ -49,7 +51,9 @@ const st = await ev(`(async () => { const s = window.__app.getState(); await s.l
            thumb: s2.library.find(t => t.thumbnail)?.thumbnail || 'none' }; })()`);
 check('libreria via HTTP', st && st.lib > 0, `(${st?.lib} brani)`);
 check('like remoti via HTTP', st && st.likes >= 0, `(${st?.likes})`);
-check('cover riscritte media://→http', st && st.thumb.startsWith('http'), `→ ${String(st?.thumb).slice(0, 60)}`);
+// Le cover arrivano come /__pc/media/... (SW autenticato, token mai in URL)
+// oppure http://…?token= (fallback browser senza SW): entrambe forme valide.
+check('cover riscritte media://→fetchable', st && (st.thumb.startsWith('http') || st.thumb.startsWith('/__pc/')), `→ ${String(st?.thumb).slice(0, 60)}`);
 
 // playStream via HTTP + heal
 const stream = await ev(`(async () => {
@@ -69,14 +73,19 @@ const su = await ev(`(async () => {
   return (await res.json()).r; })()`);
 check('stream risolto via HTTP', typeof su === 'string' && su.startsWith('http'), `→ ${String(su).slice(0, 50)}`);
 
-// media audio endpoint con Range
+// media audio endpoint con Range (le librerie possono contenere filePath
+// orfani su disco → si prova ogni traccia finché una risponde 206)
 const media = await ev(`(async () => {
-  const t = window.__app.getState().library.find(t => t.filePath);
-  if (!t) return null;
   const conf = JSON.parse(localStorage.getItem('mh-remote-conf'));
-  const r = await fetch(conf.base + '/media/audio/' + t.id + '?token=' + conf.token,
-    { headers: { Range: 'bytes=0-1023' } });
-  return { status: r.status, len: (await r.arrayBuffer()).byteLength }; })()`);
+  const cand = window.__app.getState().library.filter(t => t.filePath);
+  let last = null;
+  for (const t of cand) {
+    const r = await fetch(conf.base + '/media/audio/' + t.id + '?token=' + conf.token,
+      { headers: { Range: 'bytes=0-1023' } });
+    last = { status: r.status, len: (await r.arrayBuffer()).byteLength, id: t.id };
+    if (r.status === 206) break;
+  }
+  return last; })()`);
 check('audio endpoint Range 206', media && media.status === 206 && media.len === 1024, JSON.stringify(media || {}));
 
 // preferenze condivise: scrittura da "telefono" → lettura lato server

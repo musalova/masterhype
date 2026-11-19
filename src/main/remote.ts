@@ -73,9 +73,16 @@ const isLanIp = (ip: string) =>
 // tailnet raggiunge il PC da QUALSIASI rete (fuori casa, 4G, altra Wi-Fi)
 const isTailscaleIp = (ip: string) => /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip);
 
+// Schede virtuali (WSL/Hyper-V, VirtualBox, VMware, Docker, Bluetooth PAN):
+// i loro IP passano il matcher "LAN" ma sono irraggiungibili dal telefono —
+// nel failover del probe venivano provati per primi bruciando 5s a testa.
+// Tailscale NON va filtrato: è una rotta valida anche fuori casa.
+const VIRTUAL_IFACE = /vEthernet|Pseudo|Loopback|Bluetooth|VMware|VirtualBox|WSL|Docker|Hyper-V/i;
+
 function allAddresses(): string[] {
   const ips: string[] = [];
-  for (const list of Object.values(networkInterfaces())) {
+  for (const [name, list] of Object.entries(networkInterfaces())) {
+    if (VIRTUAL_IFACE.test(name)) continue;
     for (const n of list ?? []) {
       if (n.family === 'IPv4' && !n.internal) ips.push(n.address);
     }
