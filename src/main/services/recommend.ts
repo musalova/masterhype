@@ -772,6 +772,14 @@ const STATION_TAGS: Record<string, string[]> = {
 // Se la stazione dichiara un tag genere (def.genre) il pool si arricchisce
 // coi top artisti/tracce del tag su Last.fm + Deezer — la query YT da sola
 // ("<genere> hits") restituiva hit generiche fuori tema.
+// Quanti tag voluti collimano coi tag dell'artista, con match normalizzato e
+// substring ("italian trap" ↔ "trap"): i tag Last.fm non sono uniformi.
+function wantHits(artistTags: string[], want: string[]): number {
+  const at = artistTags.map(normTag);
+  return want.filter((w) => at.some((x) => x === w
+    || (x.length > 2 && w.length > 2 && (x.includes(w) || w.includes(x))))).length;
+}
+
 async function stationQuery(u: number, def: StationDef): Promise<TrackRef[]> {
   const t = tasteCtx(u);
   const map = new Map<string, Candidate>();
@@ -799,11 +807,15 @@ async function stationQuery(u: number, def: StationDef): Promise<TrackRef[]> {
   if (wantTags?.length) {
     // Artisti del profilo i cui tag collimano col tema → i loro top brani
     // entrano come 'tilt' (scoring + dedup li mescolano nel ranking).
+    // Stazione di genere: servono ≥2 tag collimanti — un 'jazz' marginale su
+    // un'artista pop non basta, o entrano hit fuori tema (preferiti d'altro
+    // genere nella stazione jazz). Mood/decennio restano a 1 (larghezza voluta).
+    const needed = def.genre ? 2 : 1;
     const prof = tasteProfile(u, 'artist').filter((r) => r.weight > 1).slice(0, 18).map((r) => r.value);
     const matched: string[] = [];
     await mapLimit(prof, 6, async (a) => {
       const at = await lastfmArtistTags(a).catch(() => [] as string[]);
-      if (at.some((x) => wantTags.includes(x))) matched.push(a);
+      if (wantHits(at, wantTags) >= needed) matched.push(a);
     });
     await mapLimit(shuffle(matched).slice(0, 4), 3, async (a) => {
       for (const tr of (await deezerArtistTop(a).catch(() => [])).slice(0, 2)) {
@@ -811,10 +823,23 @@ async function stationQuery(u: number, def: StationDef): Promise<TrackRef[]> {
       }
     });
   }
-  const cands = [...map.values()].filter((c) => candOk(t, c));
+  let cands = [...map.values()].filter((c) => candOk(t, c));
   // Affinità coi gusti anche dentro il tema: a parità di query salgono gli
   // artisti nei generi che l'utente ama e scendono quelli che skippa.
   const tags = await artistTagsOf([...new Set(cands.map((c) => norm(c.artist)))]);
+  if (def.genre && wantTags?.length) {
+    // Fedeltà al genere: fonti nate dal tag sempre dentro; le altre solo se i
+    // tag Last.fm dell'artista confermano il tema. Artista senza tag (non
+    // verificabile): passa, la query del genere l'ha già selezionato. Se il
+    // filtro svuotasse troppo la scaletta si ripiega sul pool intero.
+    const gated = cands.filter((c) => {
+      if (c.sources.has('tag') || c.sources.has('tagtracks')) return true;
+      const at = tags.get(norm(c.artist)) ?? [];
+      if (!at.length) return true;
+      return wantHits(at, wantTags) >= 1;
+    });
+    if (gated.length >= 8) cands = gated;
+  }
   const scored = cands.map((c) => {
     const a = norm(c.artist);
     const s = (c.rank != null ? 1 - c.rank / 30 : 0)
@@ -889,9 +914,8 @@ export async function stationContinue(u: number, videoId: string, artist: string
         .map(([x]) => x);
     }
   }
-  const wantSet = new Set(wantTags.map(normTag));
   const tagMap = new Map<string, string[]>();
-  if (wantSet.size) {
+  if (wantTags.length) {
     const uniq = [...new Set(fresh.map((x) => norm(x.artist)))].slice(0, 15);
     await mapLimit(uniq, 6, async (a) => { tagMap.set(a, await lastfmArtistTags(a).catch(() => [])); });
   }
@@ -902,7 +926,9 @@ export async function stationContinue(u: number, videoId: string, artist: string
       + (1 - i / Math.max(1, ups.length)) * 0.35; // il rank upNext resta un segnale
     if (seedArtist && artistMatches(seedArtist, c.artist)) s += 1.3;
     if (artistMatches(artist, c.artist)) s += 0.7; // resta vicino a ciò che suona
-    if (wantSet.size) s += (tagMap.get(a) ?? []).some((x) => wantSet.has(normTag(x))) ? 0.9 : -0.35;
+    // Ancora al tema con match substring ("italian trap" ↔ "trap"): il match
+    // esatto lasciava derivare le radio di genere a ogni continuazione.
+    if (wantTags.length) s += wantHits(tagMap.get(a) ?? [], wantTags) ? 0.9 : -0.35;
     return { c, s };
   }).sort((a, b) => b.s - a.s);
   const out: TrackRef[] = [];

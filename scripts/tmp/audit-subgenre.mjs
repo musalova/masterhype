@@ -35,14 +35,21 @@ const ev = (expr) => new Promise((res) => {
   ws.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression: expr, returnByValue: true, awaitPromise: true } }));
 });
 await sleep(3000);
-await ev(`window.__mhApi().library.tasteSeed(['Vasco Rossi', 'Nirvana', 'Sfera Ebbasta'])`);
+// Gusti volutamente OFF-genere rispetto a jazz/blues: se il tilt è troppo
+// permissivo questi preferiti entrano in scaletta (il bug segnalato).
+await ev(`window.__mhApi().library.tasteSeed(['Vasco Rossi', 'Nirvana', 'Sfera Ebbasta', 'Drake'])`);
+const OFF = /vasco|sfera|drake|nirvana/i;
 
-for (const id of ['trap-it', 'grunge', 'bossa', 'jazz', 'cantautori']) {
+for (const id of ['trap-it', 'grunge', 'bossa', 'jazz', 'blues', 'cantautori']) {
   const list = await ev(`window.__mhApi().rec.station('${id}')`);
   const n = list?.length ?? 0;
   const unkn = (list ?? []).filter((t) => /sconosciuto/i.test(t.artist ?? '')).length;
+  const offGenre = (list ?? []).filter((t) => OFF.test(t.artist ?? ''));
   check(`${id}: popolata`, n >= 6, `${n} brani`);
   check(`${id}: zero artisti sconosciuti`, unkn === 0, `${unkn} sconosciuti`);
+  // Nirvana nella stazione grunge è corretto (è il genere); altrove è bug.
+  if (id !== 'grunge' && id !== 'trap-it')
+    check(`${id}: niente preferiti fuori genere`, offGenre.length === 0, offGenre.map((t) => t.artist).join(',') || 'ok');
   console.log('   esempio:', (list ?? []).slice(0, 5).map((t) => `${t.artist}|${t.title}`).join('  ·  '));
 }
 console.log(`\n${pass}/${pass + fail} PASS`);

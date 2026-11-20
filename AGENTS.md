@@ -449,8 +449,8 @@
   se la rete non dà niente (cache 30min in `mh-auto-cache:u<id>:sugg:local`);
   le pool di scoperta (`tasteSeededPool`) partono da upNext dei propri semi —
   le classifiche globali sono quota minore, mai dominanti; i mix/radio di
-  genere (`genrePool`) si seminano dalle tracce proprie di quel genere, NON da
-  "${genre} hits" nudo. Tag spazzatura (seen live/favorites/vocalists/misc…)
+  genere (`genrePool`) si seminano dalle tracce proprie di quel genere o dai
+  risultati del genere stesso, MAI dai like generici. Tag spazzatura (seen live/favorites/vocalists/misc…)
   filtrati dall'UNICO `JUNK_TAGS`/`cleanTags` di offlineRec — Home, Stazioni e
   Playlist lo condividono, mai duplicare set locali.
 - Boot veloce col PC morto: `call()` ha timeout 10s + FAIL-FAST se `isOnline()===false`
@@ -775,12 +775,20 @@
   DISTRIBUITO; `radioForGenre` boosta gli artisti del tag già nei gusti;
   `stationNovita` usa rank chart + tag/co-occorrenze (funziona anche senza
   chiave Last.fm); le stazioni generiche hanno un "tilt" (`STATION_TAGS`):
-  artisti del profilo coerenti col tema entrano in scaletta. Le stazioni con
+  artisti del profilo coerenti col tema entrano in scaletta. **Fedeltà genere**
+  (bug "preferiti d'altro genere nella stazione jazz"): il tilt sulle stazioni
+  con `def.genre` richiede ≥2 tag collimanti (`wantHits`, match normalizzato +
+  substring "italian trap"↔"trap" — i tag Last.fm non sono uniformi), e un gate
+  finale scarta i candidati le cui tag Last.fm non confermano il tema (fonti
+  `tag`/`tagtracks` esenti per costruzione; tagless artisti passano via query).
+  `stationContinue` usa lo stesso `wantHits` per l'ancora — il match esatto
+  lasciava derivare le radio di genere a ogni continuazione. Le stazioni con
   `StationDef.genre` (gruppi `genere`/`sottogenere` — trap, grunge, bossa nova,
   jazz…) seminano il pool da `lastfmTagTopArtists`/`lastfmTagTopTracks` del tag
   + top Deezer dei migliori (fonti `tag`/`tagtracks`, bonus in scoring): la sola
   query YT "<genere> hits" restituiva hit fuori tema. Offline `offlineStation`
-  usa `genrePool` (propri brani del genere + upNext + query curata).
+  usa `genrePool` (propri brani del genere + upNext + query curata) — semi
+  upNext = brani/risultati DEL genere, mai like generici.
 - **Mai 'Sconosciuto' in scaletta**: `addCand` e `stationFilterCtx`
   (recommend.ts) e `tasteOrder` (offlineRec.ts) scartano candidati con artista
   `norm()==='sconosciuto'` — una riga senza artista reale appare rotta.

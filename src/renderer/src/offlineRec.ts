@@ -223,10 +223,14 @@ function genreSeedTracks(genre: string, library: LibraryTrack[]): LibraryTrack[]
 // una quota di ricerca "${genre} hits" (o la query curata della stazione) per
 // la scoperta. Se la libreria non copre il genere (tag senza file locali)
 // resta solo la ricerca — tasteOrder comunque filtra e ordina sui gusti.
-async function genrePool(genre: string, library: LibraryTrack[], remoteLikes: RemoteLike[], query?: string): Promise<TrackRef[]> {
+async function genrePool(genre: string, library: LibraryTrack[], query?: string): Promise<TrackRef[]> {
   const own = genreSeedTracks(genre, library).slice(0, 10).map(toRef);
-  const seeds = own.length ? own : likedTracks(library, remoteLikes).slice(0, 4);
-  const [ups, hits] = await Promise.all([upNextPool(seeds, 3), searchPool(query ?? `${genre} hits`)]);
+  const hits = await searchPool(query ?? `${genre} hits`);
+  // Semi upNext: i tuoi brani del genere, o — se la libreria non ne ha — i
+  // risultati del genere stesso. MAI i like generici: seminare upNext dai
+  // preferiti riempiva la stazione jazz di pezzi pop che ami.
+  const seeds = own.length ? own : hits.slice(0, 4);
+  const ups = await upNextPool(seeds, 3);
   return [...own, ...ups, ...hits.slice(0, 15)];
 }
 
@@ -285,7 +289,7 @@ export async function offlineAutoplaylist(id: string, library: LibraryTrack[], r
   // Scoperte/novità: pool tarata sui gusti e ORDINATA — prima usciva in ordine
   // grezzo (le classifiche dominavano → artisti sconosciuti in testa).
   else if (id === 'scoperte' || id === 'nuove') list = tasteOrder(await fresh(true));
-  else if (id.startsWith('genre:')) list = tasteOrder(await genrePool(id.slice(6), library, remoteLikes));
+  else if (id.startsWith('genre:')) list = tasteOrder(await genrePool(id.slice(6), library));
   else if (id.startsWith('artist:')) list = tasteOrder(dedupe([...await searchPool(id.slice(7)), ...await upNextPool(likes, 1)]));
   return dedupe(list).slice(0, 50);
 }
@@ -295,7 +299,7 @@ export async function offlineStation(id: string, library: LibraryTrack[], remote
   const def = STATIONS.find((s) => s.id === id);
   // Stazione di genere: i tuoi brani di quel genere + correlati + catalogo,
   // non solo la query nuda (parità col seed Last.fm del PC).
-  if (def?.genre) return tasteOrder(await genrePool(def.genre, library, remoteLikes, def.query)).slice(0, 40);
+  if (def?.genre) return tasteOrder(await genrePool(def.genre, library, def.query)).slice(0, 40);
   if (def?.query) return tasteOrder(await searchPool(def.query)).slice(0, 40);
 
   // stazioni personali: equivalenti locali
@@ -318,7 +322,7 @@ export async function offlineStation(id: string, library: LibraryTrack[], remote
 export async function offlineRadio(kind: 'artist' | 'genre', value: string, library: LibraryTrack[] = [], remoteLikes: RemoteLike[] = []): Promise<TrackRef[]> {
   // Genere: i semi sono i TUOI brani di quel genere (era "${genre} hits" nudo —
   // tirava fuori roba generica e artisti sconosciuti).
-  if (kind === 'genre') return tasteOrder(await genrePool(value, library, remoteLikes)).slice(0, 40);
+  if (kind === 'genre') return tasteOrder(await genrePool(value, library)).slice(0, 40);
   const found = await searchPool(value);
   const v = normText(value);
   // Il seed tiene ~1/3 della scaletta (parità col PC), interlacciato coi

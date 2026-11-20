@@ -1,4 +1,7 @@
 {
+  "0.5.16": [
+    "Le stazioni di genere ora rispettano davvero il tema: nelle stazioni jazz, blues e simili non trovi più i tuoi brani preferiti di altri generi"
+  ],
   "0.5.15": [
     "Stazioni molto più ricche: 37 nuove tra generi e sottogeneri (jazz, classica, trap, grunge, synthwave, bossa nova e tanti altri), con suggerimenti molto più vicini al tema e ai tuoi gusti",
     "Niente più 'artista sconosciuto' nelle stazioni: il lettore ora recupera il nome dell'artista anche quando YouTube non lo fornisce"
