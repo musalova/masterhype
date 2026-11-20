@@ -58,3 +58,45 @@ export const listenTasteWeight = (playedS: number, durationS?: number): number =
 
 // Il segnale sull'artista gocciola su tag Last.fm / genere ID3 al 35%.
 export const TAG_SPILL = 0.35;
+
+// ---- Filtro "canali-compilation" condiviso PC↔telefono ----
+// Su YouTube metà dei risultati per query tematiche sono upload di canali
+// playlist ("THE GYM BEATS", "Jazz and Blues Experience", "AI-Music",
+// "LUNA ITALIANA"): megamix da 30min-3h spacciati per brani. In scaletta è un
+// degrado grave ("canzoni belle e coerenti"). Le parole sotto sono scelte per
+// NON colpire artisti veri: fuori 'legend' (John Legend), 'experience'
+// (Jimi Hendrix Experience), 'central' (Central Cee), 'world' (Third World),
+// 'club' (Culture Club), 'sounds' (The Sounds), 'stereo/fm' (Stereo MCs, FM),
+// 'disco' (Panic! at the Disco), 'bossa' (Bossa Nostra), 'vintage' (Vintage
+// Trouble), 'deluxe', 'sleep'/'study' (Sleep), 'project' (Alan Parsons).
+// Parole da canale ovunque nel nome (confini di parola):
+const JUNK_ARTIST_WORD = /\b(playlist|megamix|nonstop|non-stop|lounge|vibes?|chill|relax\w*|relaj\w*|motivation|workout|fitness|gym|training|universe|melodies|media|jukebox|vinyl|sessions|café|cafe|productions?|tv|official|channel|karaoke|instrumental|acoustic|ambient|grooves|classics|classical|hits?|lyrics|essentials|jazz|road trip|brain power|tunes|reggaeton)\b/i;
+// Suffissi tipici attaccati al nome (CoverSideMusic, alexrainbirdMusic,
+// OSOCITYNATION, Latino Mix — "Mix Master Mike" resta salvo: 'mix' in testa):
+const JUNK_ARTIST_TAIL = /(music|musik|musica|beats|beatz|covers|nation|holics|records|fm|tv|mix|productions?|italiana|italiano)$/i;
+// "The Big 80s Guys", "COUNTRY LEGENDS 1990s" — decennio nel nome del canale:
+const JUNK_ARTIST_DECADE = /(^|\s)\d{2,4}s\b/i;
+// Lettere matematiche/emoji da canale fake ("𝘀𝗮𝗱 𝘁𝗵𝗶𝗻𝗴𝘀"):
+const JUNK_ARTIST_FANCY = /[\u{1D400}-\u{1D7FF}\u{1F000}-\u{1FAFF}]/u;
+// Byline generata, non un artista: "Male singer with guitar", "Duet with
+// guitar", "Group of singers" — metadato mancante travestito da nome.
+const JUNK_ARTIST_GENERIC = /\b(male|female) (singer|vocalist)|\bduet with\b|\bgroup of (singers|musicians)\b|\bwith guitar\b|\bsinger with\b/i;
+export const junkArtist = (artist: string): boolean =>
+  !!artist && (JUNK_ARTIST_WORD.test(artist) || JUNK_ARTIST_TAIL.test(artist)
+    || JUNK_ARTIST_DECADE.test(artist) || JUNK_ARTIST_FANCY.test(artist)
+    || JUNK_ARTIST_GENERIC.test(artist));
+
+// Titolo da compilation/upload, non da canzone: "Best of X", "Vol. 2",
+// "1 Hour", "Playlist", emoji, separatore '|', "Chill Guitar Music".
+// Fuori 'mix' prima di ')' (i remix "(Extended Mix)" sono legittimi),
+// 'the best' (Tina Turner), 'relax' (Frankie Goes to Hollywood), 'sleep'/
+// 'work out'/'love song' singolare (canzoni vere).
+const JUNK_TITLE_RE = /(megamix|nonstop|non-stop|\bplaylist|\bbest of\b|\bgreatest hits\b|\btop \d+|\bvol\.?\s*\d|\bcompilation|\bmedley|\bmashup|\bfull album|\bhits\b|\bclassics\b|\bcollection|\bmost famous\b|\bmasterpieces?\b|\d+\s*(min\b|minutes?\b|hours?\b|h\b)|\||spotify|\bworkout\b|\bgym\b|\bfitness\b|\btraining\b|le più belle|per l'anima|\btribute\b|karaoke|relaxing|relaxation|relaj\w*|\blounge\b|\bchill\b|\blo-?fi\b|\bacoustic guitar\b|slowed|\bsped\b|nightcore|reverb|\b8d\b|bass boosted|oldies|aesthetic|\basmr\b|love songs|\bblues music\b|\bjazz (lounge|music|bar)\b|\bsoul music\b|\bcountry (hits|music)\b|\bparty mix\b|\bdj set\b|\bmixed by\b|\bretrowave\b|\bsynthwave\b|\bphonk\b|\bmix\b(?!\s*\))|\[.*(mix|playlist|compilation|hour|beats|lo-?fi|chill).*\]|motivational|musica per|canzoni italiane)/i;
+// Emoji nel titolo = upload YouTube, non metadato di canzone (regex a parte:
+// la classe \u{…} esige il flag /u).
+const JUNK_TITLE_FANCY = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+// Oltre ~13 min non è quasi mai una canzone: i megamix vanno 30min-3h.
+const JUNK_MAX_S = 800;
+export const junkTitle = (title: string): boolean => !!title && (JUNK_TITLE_RE.test(title) || JUNK_TITLE_FANCY.test(title));
+export const junkTrack = (artist: string, title: string, durationS?: number): boolean =>
+  junkArtist(artist) || junkTitle(title) || (durationS != null && durationS > JUNK_MAX_S);

@@ -102,7 +102,7 @@ function StationDetail({ sel }: { sel: StationSel }) {
       const t = cachedAuto<TrackRef[]>(ck)
         ?? await (sel.kind === 'station'
           ? offlineStation(sel.id, s.library, s.remoteLikeList)
-          : offlineRadio(sel.radioKind, sel.value, s.library, s.remoteLikeList)).catch(() => []);
+          : offlineRadio(sel.radioKind, sel.value, s.library)).catch(() => []);
       setTracks(t ?? []);
       if (!t?.length) toast(`Stazione non disponibile — ${pcGone()} e nessuna traccia trovata`, 'info');
     } finally {

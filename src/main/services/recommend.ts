@@ -7,7 +7,7 @@ import { getDb } from '../db';
 import { mapLimit } from './util';
 import type { TrackRef, SuggestedTrack, AssistantRequest, AssistantResult, StationDef } from '../../shared/types';
 import { STATIONS } from '../../shared/types';
-import { normText as norm, normTag, trackKey as key, trackBaseKey as baseKey } from '../../shared/taste';
+import { normText as norm, normTag, trackKey as key, trackBaseKey as baseKey, junkTrack } from '../../shared/taste';
 import { parsePrompt } from './promptParse';
 export { parsePrompt };
 
@@ -88,6 +88,9 @@ function addCand(map: Map<string, Candidate>, title: string, artist: string, sou
   // Senza artista reale il candidato non è punteggiabile (né gusto né tag) e
   // in scaletta si vede come "Sconosciuto" — meglio non averlo.
   if (!title || !artist || norm(artist) === 'sconosciuto') return;
+  // Canali-compilation/megamix YouTube ("THE GYM BEATS", "Jazz and Blues
+  // Experience"): in scaletta sono degrado grave — mai candidati.
+  if (junkTrack(artist, title, extra?.durationS)) return;
   const k = key(artist, title);
   const c = map.get(k);
   if (c) {
@@ -546,6 +549,7 @@ const candOk = (t: TasteCtx, c: Candidate): boolean =>
 function stationFilterCtx(list: TrackRef[], t: TasteCtx): TrackRef[] {
   return list.filter((x) =>
     norm(x.artist) !== 'sconosciuto' && // senza artista reale la riga appare rotta
+    !junkTrack(x.artist, x.title, x.durationS) && // no canali-megamix
     !artistBlocked(t, x.artist) &&
     !t.negKeys.has(baseKey(x.artist, x.title)) &&
     !t.recentKeys.has(baseKey(x.artist, x.title)));
@@ -784,18 +788,26 @@ async function stationQuery(u: number, def: StationDef): Promise<TrackRef[]> {
   const t = tasteCtx(u);
   const map = new Map<string, Candidate>();
   const wantTags = STATION_TAGS[def.id] ?? (def.genre ? [def.genre] : undefined);
-  // Catalogo Last.fm del genere: artisti e brani di punta (semi di qualità).
+  // Catalogo Last.fm dei tag tema: artisti e brani di punta (semi di qualità).
+  // Stazioni di genere → il tag dichiarato (def.genre); mood/decennio → i
+  // primi tag del tema ('energetic'/'workout' per Energia, '80s' per Anni '80):
+  // la sola query YT ("workout hits") restituiva soprattutto canali-megamix.
   // Artisti del tag ordinati per rilevanza+gusti → i loro top Deezer entrano
   // come 'tag' e concorrono allo scoring coi risultati della query.
-  if (def.genre) {
+  // Primo tag extra di STATION_TAGS come secondo seme: più varietà dentro il
+  // tema ("soundtrack" da sola monopolizzava Bollywood → + 'score').
+  const seedTags = def.genre
+    ? [def.genre, ...(wantTags ?? []).filter((x) => x !== def.genre)].slice(0, 2)
+    : (wantTags ?? []).slice(0, 2);
+  for (const stag of seedTags) {
     const [tagArtists, tagTracks] = await Promise.all([
-      lastfmTagTopArtists(def.genre).catch(() => [] as string[]),
-      lastfmTagTopTracks(def.genre).catch(() => [] as { title: string; artist: string }[]),
+      lastfmTagTopArtists(stag).catch(() => [] as string[]),
+      lastfmTagTopTracks(stag).catch(() => [] as { title: string; artist: string }[]),
     ]);
-    tagTracks.slice(0, 12).forEach((tr, i) => addCand(map, tr.title, tr.artist, 'tagtracks', { rank: i }));
+    tagTracks.slice(0, seedTags.length > 1 ? 7 : 12).forEach((tr, i) => addCand(map, tr.title, tr.artist, 'tagtracks', { rank: i }));
     const ranked = tagArtists.slice(0, 16)
       .map((a, i) => ({ a, s: 1 / (1 + i) + Math.max(0, (t.artistW.get(norm(a)) ?? 0) / t.maxA) }))
-      .sort((x, y) => y.s - x.s).slice(0, 8);
+      .sort((x, y) => y.s - x.s).slice(0, seedTags.length > 1 ? 5 : 8);
     await mapLimit(ranked, 4, async ({ a, s }) => {
       for (const tr of (await deezerArtistTop(a).catch(() => [])).slice(0, 2)) {
         addCand(map, tr.title, tr.artist, 'tag', { sim: s });
@@ -826,30 +838,53 @@ async function stationQuery(u: number, def: StationDef): Promise<TrackRef[]> {
   let cands = [...map.values()].filter((c) => candOk(t, c));
   // Affinità coi gusti anche dentro il tema: a parità di query salgono gli
   // artisti nei generi che l'utente ama e scendono quelli che skippa.
-  const tags = await artistTagsOf([...new Set(cands.map((c) => norm(c.artist)))]);
-  if (def.genre && wantTags?.length) {
-    // Fedeltà al genere: fonti nate dal tag sempre dentro; le altre solo se i
-    // tag Last.fm dell'artista confermano il tema. Artista senza tag (non
-    // verificabile): passa, la query del genere l'ha già selezionato. Se il
-    // filtro svuotasse troppo la scaletta si ripiega sul pool intero.
-    const gated = cands.filter((c) => {
-      if (c.sources.has('tag') || c.sources.has('tagtracks')) return true;
-      const at = tags.get(norm(c.artist)) ?? [];
-      if (!at.length) return true;
-      return wantHits(at, wantTags) >= 1;
-    });
-    if (gated.length >= 8) cands = gated;
+  const rankAndScore = async () => {
+    const tags = await artistTagsOf([...new Set(cands.map((c) => norm(c.artist)))]);
+    if (def.genre && wantTags?.length) {
+      // Fedeltà al genere: fonti nate dal tag sempre dentro; le altre solo se i
+      // tag Last.fm dell'artista confermano il tema. Artista senza tag (non
+      // verificabile): passa, la query del genere l'ha già selezionato. Se il
+      // filtro svuotasse troppo la scaletta si ripiega sul pool intero.
+      const gated = cands.filter((c) => {
+        if (c.sources.has('tag') || c.sources.has('tagtracks')) return true;
+        const at = tags.get(norm(c.artist)) ?? [];
+        if (!at.length) return true;
+        return wantHits(at, wantTags) >= 1;
+      });
+      if (gated.length >= 8) cands = gated;
+    }
+    return cands.map((c) => {
+      const a = norm(c.artist);
+      const s = (c.rank != null ? 1 - c.rank / 30 : 0)
+        + Math.max(-1, Math.min(1, (t.artistW.get(a) ?? 0) / t.maxA)) * 1.1
+        + (c.sources.has('tilt') ? 0.9 : 0)
+        + (c.sources.has('tag') || c.sources.has('tagtracks') ? 0.8 : 0)
+        + (c.sources.has('upn') ? 0.5 : 0)
+        + tagAffinity(t, tags.get(a) ?? []) * 0.7
+        + trackAff(t, c.artist, c.title) * 0.4;
+      return { c, s };
+    }).sort((a, b) => b.s - a.s);
+  };
+  let scored = await rankAndScore();
+  // Ricarica via upNext se il pool filtrato è scarso (senza chiave Last.fm i
+  // semi tag mancano e la query ripulita dai canali-junk lascia poco): i
+  // correlati dei migliori brani risolti portano canzoni reali dello stesso tema.
+  if (scored.length < 14) {
+    const early = scored.slice(0, 10);
+    await resolveVideoIds(early.map((x) => x.c), 10);
+    const ups = (await mapLimit(early.filter((x) => x.c.videoId).slice(0, 3), 2,
+      (x) => upNext(x.c.videoId!).catch(() => [] as TrackRef[]))).flat();
+    const seen = new Set(cands.map((c) => c.key));
+    let added = 0;
+    for (const u of ups.slice(0, 40)) {
+      if (!seen.has(key(u.artist, u.title))) {
+        seen.add(key(u.artist, u.title));
+        addCand(map, u.title, u.artist, 'upn', { videoId: u.videoId, thumbnail: u.thumbnail, durationS: u.durationS });
+        added++;
+      }
+    }
+    if (added) { cands = [...map.values()].filter((c) => candOk(t, c)); scored = await rankAndScore(); }
   }
-  const scored = cands.map((c) => {
-    const a = norm(c.artist);
-    const s = (c.rank != null ? 1 - c.rank / 30 : 0)
-      + Math.max(-1, Math.min(1, (t.artistW.get(a) ?? 0) / t.maxA)) * 1.1
-      + (c.sources.has('tilt') ? 0.9 : 0)
-      + (c.sources.has('tag') || c.sources.has('tagtracks') ? 0.8 : 0)
-      + tagAffinity(t, tags.get(a) ?? []) * 0.7
-      + trackAff(t, c.artist, c.title) * 0.4;
-    return { c, s };
-  }).sort((a, b) => b.s - a.s);
   const best = scored.slice(0, 30);
   await resolveVideoIds(best.map((x) => x.c), 30);
   const byArtist = new Map<string, Candidate[]>();

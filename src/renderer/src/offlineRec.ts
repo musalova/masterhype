@@ -2,7 +2,7 @@ import { STATIONS } from '../../shared/types';
 import type { AssistantRequest, AssistantResult, LibraryTrack, RemoteLike, SuggestedTrack, TrackRef, TrendItem } from '../../shared/types';
 import { myUserId, isStandalone } from './remote';
 import { localTaste, mergeTaste, localSkipKeys, trackBaseKey } from './localData';
-import { normText, trackKey } from '../../shared/taste';
+import { normText, trackKey, junkTrack } from '../../shared/taste';
 
 // Approssimazioni locali delle funzioni "taste" che normalmente calcola il PC
 // (suggest, autoplaylist, stazioni, radio, assistente, trends). Con il PC spento
@@ -116,7 +116,8 @@ function tasteOrder(list: TrackRef[]): TrackRef[] {
   const t = tasteSnapshot();
   const n = Math.max(1, list.length);
   return dedupe(list)
-    .filter((x) => normText(x.artist) !== 'sconosciuto' && !blockedLocal(t, x.artist) && !t.neg.has(trackBaseKey(x.artist, x.title)))
+    .filter((x) => normText(x.artist) !== 'sconosciuto' && !junkTrack(x.artist, x.title, x.durationS)
+      && !blockedLocal(t, x.artist) && !t.neg.has(trackBaseKey(x.artist, x.title)))
     .map((x, i) => ({ x, s: ((t.w.get(normText(x.artist)) ?? 0) / t.max) * 1.2 + (1 - i / n) * 0.3 }))
     .sort((a, b) => b.s - a.s)
     .map((x) => x.x);
@@ -319,7 +320,7 @@ export async function offlineStation(id: string, library: LibraryTrack[], remote
   return tasteOrder(list).slice(0, 40);
 }
 
-export async function offlineRadio(kind: 'artist' | 'genre', value: string, library: LibraryTrack[] = [], remoteLikes: RemoteLike[] = []): Promise<TrackRef[]> {
+export async function offlineRadio(kind: 'artist' | 'genre', value: string, library: LibraryTrack[] = []): Promise<TrackRef[]> {
   // Genere: i semi sono i TUOI brani di quel genere (era "${genre} hits" nudo —
   // tirava fuori roba generica e artisti sconosciuti).
   if (kind === 'genre') return tasteOrder(await genrePool(value, library)).slice(0, 40);
