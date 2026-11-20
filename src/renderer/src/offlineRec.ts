@@ -220,6 +220,153 @@ function genreSeedTracks(genre: string, library: LibraryTrack[]): LibraryTrack[]
     .sort((a, b) => (b.liked ? 5 : 0) + b.playCount - ((a.liked ? 5 : 0) + a.playCount));
 }
 
+// ---- Verifica genere via iTunes Search API (parità del gate Last.fm del PC) ----
+// Senza gate un preferito off-genere (Queen) entrava in "blues": la query lo
+// tirava su e niente controllava che il suo genere fosse davvero blues.
+// L'API è pubblica con CORS → funziona sul telefono senza chiavi.
+// [genre della stazione normalizzato] → regex dei primaryGenre iTunes ammessi.
+const ITUNES_ACCEPT: [RegExp, RegExp][] = [
+  [/^blues/, /\bblues/i],
+  [/^jazz|bebop/, /jazz|bebop|swing|big band|dixieland|ragtime|vocal|bossa|torch|lounge|standards|easy listening/i],
+  [/bossa/, /bossa|brazil|latin|jazz|mpb/i],
+  [/metal/, /metal|thrash|doom|sludge|grind|death|hardcore/i],
+  [/hip.?hop|rap|trap|drill/, /hip.?hop|rap|trap|drill|grime|urban/i],
+  [/soul|funk/, /soul|r&b|rnb|funk|motown|gospel|neo|disco|quiet storm/i],
+  [/r&b|rnb/, /soul|r&b|rnb|funk|motown|neo|quiet storm|urban/i],
+  [/techno/, /techno|electronic|dance|house|minimal|acid/i],
+  [/house/, /house|electronic|dance|techno|deep|acid|garage/i],
+  [/drum|dnb/, /drum|bass|jungle|dubstep|electronic|dance|breakbeat/i],
+  [/lo.?fi|chill/, /lo.?fi|chill|ambient|downtempo|electronic|instrumental|new age/i],
+  [/disco|dance|synth|edm|club|eurodance/, /disco|dance|electronic|house|techno|euro|synth|edm|trance|club/i],
+  [/country/, /country|americana|bluegrass|honky|western/i],
+  [/folk/, /folk|americana|singer|acoustic|bluegrass|traditional|world|celtic|country/i],
+  [/reggae|dancehall|ska/, /reggae|ska|dub|dancehall|rocksteady/i],
+  [/soundtrack|colonne/, /soundtrack|score|classical|orchestr|film|original cast/i],
+  [/classic/, /classical|opera|orchestr|baroque|chamber|symphon|choral|score|soundtrack|piano|violin/i],
+  [/latin|reggaeton|urbano/, /latin|reggaeton|salsa|bachata|tropical|cumbia|merengue|urban|balada|mexican|tejano/i],
+  [/k.?pop/, /k.?pop|korean|asia/i],
+  [/afro/, /afro|african|world|highlife|soca/i],
+  [/neomelodica/, /pop|italian|vocal|easy listening|world/i],
+  [/cantautor/, /singer|pop|italian|folk|rock/i],
+  [/italiana/, /italian|pop|vocal|singer|easy listening|world/i],
+  [/rock|punk|grunge|emo|wave|indie|alternative|hard rock/, /rock|alternative|indie|punk|metal|grunge|emo|new wave|garage|surf|hardcore|post|britpop|glam|singer\/songwriter|pop/i],
+  [/pop|vocal/, /pop|italian|vocal|easy listening|singer|europop|teen|adult contemporary|soft rock|italo|dance/i],
+];
+
+const itunesAccept = (stationGenre: string): RegExp | null => {
+  const g = normText(stationGenre);
+  for (const [re, acc] of ITUNES_ACCEPT) if (re.test(g)) return acc;
+  return null;
+};
+
+const ITG_KEY = () => `mh-itunes-genres:u${myUserId()}`;
+let itgMem: Map<string, string | null> | null = null;
+const itgLoad = (): Map<string, string | null> => {
+  if (itgMem) return itgMem;
+  try { itgMem = new Map(Object.entries(JSON.parse(localStorage.getItem(ITG_KEY()) ?? '{}') as Record<string, string | null>)); }
+  catch { itgMem = new Map(); }
+  return itgMem;
+};
+const itgSave = () => {
+  try {
+    if (!itgMem?.size) return;
+    // Si persistono solo i generi TROVATI: un lookup fallito per rate-limit non
+    // deve diventare "artista senza genere" permanente — la sessione dopo riprova.
+    const ok = [...itgMem].filter((e): e is [string, string] => e[1] != null).slice(-600);
+    if (ok.length) localStorage.setItem(ITG_KEY(), JSON.stringify(Object.fromEntries(ok)));
+  } catch { /* quota */ }
+};
+
+// primaryGenreName iTunes di un artista (cache + match esatto preferito al
+// primo risultato, così "Queen" non diventa "Queensrÿche"). Un retry con
+// piccolo backoff; un 403/429 marca il breaker — iTunes blocca l'IP sotto
+// raffica e insistere peggiora solo.
+const ITG_BLOCKED = '__itunes_blocked';
+async function itunesGenreOf(artist: string): Promise<string | null> {
+  const a = normText(artist);
+  if (!a) return null;
+  const c = itgLoad();
+  if (c.has(a)) return c.get(a) ?? null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      if (attempt) await new Promise((r) => setTimeout(r, 350 + Math.random() * 300));
+      const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&entity=musicArtist&limit=3`);
+      if (!r.ok) { c.set(ITG_BLOCKED, String(Date.now())); break; }
+      const j = (await r.json()) as { results?: { artistName?: string; primaryGenreName?: string }[] };
+      const res = j?.results ?? [];
+      const pick = res.find((x) => normText(x.artistName ?? '') === a) ?? res[0];
+      const g = pick?.primaryGenreName ? String(pick.primaryGenreName).toLowerCase() : null;
+      c.set(a, g); itgSave();
+      return g;
+    } catch { /* riprova */ }
+  }
+  return null;
+}
+
+// Tag artista da MusicBrainz (fallback dei preferiti: servizio diverso, niente
+// rate-limit condiviso con iTunes). Uniti in 'a|b|c' — gli stessi regex accept.
+async function mbGenreOf(artist: string): Promise<string | null> {
+  const a = normText(artist);
+  if (!a) return null;
+  const c = itgLoad();
+  const k = `mb:${a}`;
+  if (c.has(k)) return c.get(k) ?? null;
+  try {
+    const r = await fetch(`https://musicbrainz.org/ws/2/artist/?query=${encodeURIComponent(`artist:"${artist}"`)}&fmt=json&limit=1`);
+    if (!r.ok) return null;
+    const j = (await r.json()) as { artists?: { name?: string; tags?: { name?: string }[] }[] };
+    const art = (j?.artists ?? []).find((x) => normText(x.name ?? '') === a) ?? j?.artists?.[0];
+    const tags = (art?.tags ?? []).map((t) => String(t.name ?? '').toLowerCase()).filter(Boolean);
+    const g = tags.length ? tags.join('|') : null;
+    c.set(k, g); itgSave();
+    return g;
+  } catch { return null; }
+}
+
+// Filtra i candidati la cui etichetta iTunes smentisce il genere della stazione.
+// I preferiti del profilo si verificano per primi: sono loro il vettore del
+// leak (il "tilt" dei gusti) — un Queen in blues si becca qui. Artista non
+// trovato/non classificato → resta (beneficio del dubbio). Se il gate stronca
+// più della metà dei candidati il mapping è sospetto → meglio non svuotare.
+async function itunesGate(genre: string, tracks: TrackRef[]): Promise<TrackRef[]> {
+  const acc = itunesAccept(genre);
+  if (!acc || !tracks.length) return tracks;
+  const liked = new Set(tasteRowsOffline('artist').map((r) => normText(r.value)));
+  const uniq = [...new Set(tracks.map((t) => t.artist).filter((a): a is string => !!a))];
+  uniq.sort((a, b) => Number(liked.has(normText(b))) - Number(liked.has(normText(a))));
+  const genres = new Map<string, string | null>();
+  // Prima fonte, gratis e offline-pura: il tag genre della libreria cachata.
+  // Un Queen posseduto (tag 'rock') in "blues" cade senza nemmeno la rete.
+  try {
+    const lib = JSON.parse(localStorage.getItem(`mh-lib-cache:u${myUserId()}`) ?? '[]') as LibraryTrack[];
+    for (const t of lib) {
+      const a = normText(t.artist ?? '');
+      const g = normText(t.genre ?? '');
+      if (a && g && !genres.has(a)) genres.set(a, g);
+    }
+  } catch { /* */ }
+  const needLookup = uniq.filter((a) => !genres.has(normText(a)));
+  // iTunes a raffica gentile + breaker: se l'IP viene bloccato si smette subito
+  // (un 403 oggi non deve né martellare né compromettere i controlli futuri).
+  const blocked = Number(itgLoad().get(ITG_BLOCKED) ?? 0);
+  if (Date.now() - blocked > 10 * 60_000) {
+    for (let i = 0; i < Math.min(needLookup.length, 36); i += 3) {
+      if (i) await new Promise((r) => setTimeout(r, 160)); // pacing anti-429
+      await Promise.all(needLookup.slice(i, i + 3).map((a) => itunesGenreOf(a).then((g) => genres.set(normText(a), g))));
+      if (itgLoad().has(ITG_BLOCKED)) break;
+    }
+  }
+  // Fallback MusicBrainz SOLO sui preferiti rimasti non verificati: sono loro
+  // il vettore del leak — Queen in blues non può dipendere da un 403 di iTunes.
+  const missing = needLookup.filter((a) => genres.get(normText(a)) == null && liked.has(normText(a))).slice(0, 8);
+  for (const a of missing) {
+    genres.set(normText(a), await mbGenreOf(a));
+    await new Promise((r) => setTimeout(r, 850)); // MB: ~1 req/s
+  }
+  const kept = tracks.filter((t) => { const g = genres.get(normText(t.artist ?? '')); return g == null || acc.test(g); });
+  return kept.length >= 8 || kept.length >= Math.ceil(tracks.length * 0.5) ? kept : tracks;
+}
+
 // Pool "genere X": tuoi brani del genere + correlati upNext sui migliori +
 // una quota di ricerca "${genre} hits" (o la query curata della stazione) per
 // la scoperta. Se la libreria non copre il genere (tag senza file locali)
@@ -232,7 +379,7 @@ async function genrePool(genre: string, library: LibraryTrack[], query?: string)
   // preferiti riempiva la stazione jazz di pezzi pop che ami.
   const seeds = own.length ? own : hits.slice(0, 4);
   const ups = await upNextPool(seeds, 3);
-  return [...own, ...ups, ...hits.slice(0, 15)];
+  return itunesGate(genre, [...own, ...ups, ...hits.slice(0, 15)]);
 }
 
 // ---- suggest (Home hero) ----
@@ -349,8 +496,16 @@ export async function offlineContinue(videoId: string, artist: string, ctx?: str
   const ups = await directUpNext(videoId).catch(() => [] as TrackRef[]);
   if (!ups.length) return [];
   const ordered = tasteOrder(ups);
+  // Contesto di genere: la continuazione non deve derivare — lo stesso gate
+  // iTunes della scaletta (era il buco per cui "blues" scivolava nel rock).
+  const genreCtx = ctx?.startsWith('radio:genre:') ? ctx.slice(12)
+    : ctx?.startsWith('station:') ? STATIONS.find((s) => s.id === ctx.slice(8))?.genre ?? ''
+    : '';
   const seedArtist = ctx?.startsWith('radio:artist:') ? normText(ctx.slice(13)) : '';
-  if (!seedArtist) return ordered.slice(0, 15);
+  if (!seedArtist) {
+    const gated = genreCtx ? await itunesGate(genreCtx, ordered) : ordered;
+    return gated.slice(0, 15);
+  }
   // Il seme resta presente durante la continuazione (salgono i suoi brani)
   return ordered
     .map((x) => ({ x, boost: artist && normText(x.artist) === seedArtist ? 1 : 0 }))

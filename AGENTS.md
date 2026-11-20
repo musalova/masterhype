@@ -453,6 +453,15 @@
   risultati del genere stesso, MAI dai like generici. Tag spazzatura (seen live/favorites/vocalists/misc…)
   filtrati dall'UNICO `JUNK_TAGS`/`cleanTags` di offlineRec — Home, Stazioni e
   Playlist lo condividono, mai duplicare set locali.
+  **Gate genere offline `itunesGate`** (parità del gate Last.fm del PC):
+  i candidati delle stazioni di genere vengono verificati — prima fonte il tag
+  `genre` della libreria cachata (gratis, offline-puro), poi iTunes Search API
+  (`primaryGenreName`, preferiti del profilo PRIMA, pacing+retry+circuit-breaker
+  `__itunes_blocked` 10min su 403/429), fallback MusicBrainz solo sui preferiti
+  non verificati (~1req/s). Regex accept per famiglia in `ITUNES_ACCEPT`
+  (normText su entrambi i lati). Mai svuotare: se il gate stronca >50% la
+  pool passa com'era. Anche `offlineContinue` lo applica ai contesti
+  `station:`/`radio:genre:` (niente drift a coda finita).
 - Boot veloce col PC morto: `call()` ha timeout 10s + FAIL-FAST se `isOnline()===false`
   (mai attendere TCP timeout su host morto). Stato online persistito in `mh-was-online`:
   chi usa il telefono lontano dal PC riparte in modalità autonoma, il probe /api/info
