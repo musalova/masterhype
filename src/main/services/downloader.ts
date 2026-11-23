@@ -309,7 +309,7 @@ async function runJob(job: DownloadJob): Promise<void> {
       videoId: track.videoId, title: track.title, artist: track.artist,
       album: track.album, durationS, filePath: outPath, coverPath,
     });
-    recordEvent(saved.id, track.artist, 'download', undefined, job.userId ?? 1);
+    recordEvent(saved.id, track.artist, 'download', { title: saved.title, videoId: saved.videoId, thumbnail: saved.thumbnail }, job.userId ?? 1);
 
     // tag genere per il profilo gusti (se Last.fm configurata)
     const ju = job.userId ?? 1;
@@ -421,7 +421,7 @@ export async function importFiles(paths: string[], u = 1): Promise<number> {
     if (known && existsSync(known.filePath)) { n++; return; }
     const meta = await probeAudio(p);
     const t = importLocalFile(p, lib, () => meta);
-    if (t) { recordEvent(t.id, t.artist, 'download', undefined, u); n++; }
+    if (t) { recordEvent(t.id, t.artist, 'download', { title: t.title, videoId: t.videoId, thumbnail: t.thumbnail }, u); n++; }
   });
   return n;
 }

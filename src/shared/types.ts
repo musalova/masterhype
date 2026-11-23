@@ -398,6 +398,7 @@ export const IPC = {
   libraryTasteReset: 'lib:tasteReset',
   libraryListen: 'lib:listen',        // completamento ascolto (motore gusti v2)
   libraryTasteSeed: 'lib:tasteSeed',  // onboarding: semina il profilo con artisti scelti
+  libraryCover: 'lib:cover',          // copertina come data: URI (MediaImage.src non accetta media://)
   recOnboard: 'rec:onboard',          // artisti proposti per l'onboarding
   uxTrack: 'ux:track',                // uso funzioni (solo locale)
   playlistList: 'pl:list',

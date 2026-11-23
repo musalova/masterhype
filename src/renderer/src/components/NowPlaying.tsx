@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { motion } from 'framer-motion';
-import { X, Disc3, VideoOff, Radio, Trash2, Shuffle, Repeat, Repeat1, Moon, Maximize2, Minimize2, PictureInPicture2, Clapperboard, PanelRightOpen, Volume2, VolumeX } from 'lucide-react';
+import { X, Disc3, VideoOff, Radio, Trash2, Shuffle, Repeat, Repeat1, Moon, Maximize2, Minimize2, PictureInPicture2, Clapperboard, PanelRightOpen, Volume2, VolumeX, Play, Pause, SkipBack, SkipForward, Loader2 } from 'lucide-react';
 import { usePersistedState, useDeviceState } from '../persist';
 import { MUTED_KEY } from '../storePersist';
 import { api } from '../api';
@@ -10,6 +10,7 @@ import { CoverImg } from './CoverImg';
 import { LoadingState } from './common';
 import type { LibraryTrack, LyricsResult, TrackRef } from '../../../shared/types';
 
+const fmtT = (s?: number) => (s ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '0:00');
 const VID_RE = /^[A-Za-z0-9_-]{6,15}$/; // solo ID YouTube plausibili, mai URL arbitrari
 const lyrCache = new Map<string, LyricsResult>(); // testo già scaricato: niente refetch a ogni apertura
 
@@ -188,6 +189,11 @@ export default function NowPlaying({ cur, time, dur, playing, onClose, onSeek }:
   const toggleShuffle = useApp((s) => s.toggleShuffle);
   const cycleRepeat = useApp((s) => s.cycleRepeat);
   const toggleRadio = useApp((s) => s.toggleRadio);
+  const npToggle = useApp((s) => s.toggle);
+  const npPrev = useApp((s) => s.prev);
+  const npNext = useApp((s) => s.next);
+  const npRecordRemote = useApp((s) => s.recordRemote);
+  const buffering = useApp((s) => s.buffering);
 
   const hasVid = VID_RE.test(cur.videoId);
   const isLocal = !!(cur as LibraryTrack).filePath;
@@ -420,6 +426,39 @@ export default function NowPlaying({ cur, time, dur, playing, onClose, onSeek }:
             )}
           </div>
         )}
+      </div>
+
+      {/* Trasporto: su mobile è l'UNICO scrub preciso (la mini-bar ha solo la
+          progress-line) e in fullscreen gli unici comandi raggiungibili.
+          In cinema-idle sparisce col resto della UI. */}
+      <div className={`relative shrink-0 px-5 md:px-8 pb-4 pt-1 transition-opacity duration-300 ${hideUi ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center gap-2.5 text-[11px] text-white/60 tabular-nums">
+            <span className="w-9 text-right">{fmtT(time)}</span>
+            <input type="range" min={0} max={dur || 0} step={0.5} value={Math.min(time, dur || time)}
+              aria-label="Posizione nel brano" title="Posizione nel brano"
+              style={{ '--range-pct': `${dur ? Math.min(100, Math.max(0, (time / dur) * 100)) : 0}%` } as CSSProperties}
+              onChange={(e) => onSeek(+e.target.value)}
+              className="flex-1 h-1 accent-[--color-accent] cursor-pointer" />
+            <span className="w-9">{fmtT(dur)}</span>
+          </div>
+          <div className="mt-2 flex items-center justify-center gap-8">
+            <button onClick={npPrev} aria-label="Brano precedente" title="Brano precedente"
+              className="p-2 text-white/75 hover:text-white transition-colors">
+              <SkipBack size={21} />
+            </button>
+            {/* Skip anche qui = segnale: stessa soglia della barra (<30s) */}
+            <button onClick={npToggle} aria-label={playing ? 'Pausa' : 'Riproduci'} title={playing ? 'Pausa' : 'Riproduci'}
+              className="w-14 h-14 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform shadow-lg shadow-black/50">
+              {buffering ? <Loader2 size={24} className="animate-spin" /> : playing ? <Pause size={24} /> : <Play size={24} className="ml-1" />}
+            </button>
+            <button onClick={() => { if (time < 30) npRecordRemote(cur, 'skip'); npNext(); }}
+              aria-label="Brano successivo" title="Brano successivo"
+              className="p-2 text-white/75 hover:text-white transition-colors">
+              <SkipForward size={21} />
+            </button>
+          </div>
+        </div>
       </div>
     </motion.div>
   );

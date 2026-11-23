@@ -41,4 +41,24 @@ describe('parsePrompt (prompt libero assistente)', () => {
     expect(p.extraTags).toContain('pop');
     expect(p.extraTags).toContain('jazz');
   });
+
+  // Regressione (bug reali): la regex nomi accettava solo ASCII + accenti
+  // gravi — AC/DC, P!nk, Motörhead, Måneskin, Rosalía venivano rifiutati.
+  it('accetta artisti con punteggiatura e diacritici nel nome', () => {
+    for (const a of ['AC/DC', 'P!nk', 'Motörhead', 'Måneskin', 'Rosalía', 'Sigur Rós', "Guns N' Roses", 'R&B']) {
+      const p = parsePrompt(`con ${a}`);
+      expect(p.seeds).toContain(a);
+    }
+  });
+
+  it('"!" dentro la parola non spezza il nome ("P!nk"), fuori sì', () => {
+    expect(parsePrompt('con P!nk e Beyoncé').seeds).toContain('P!nk');
+    const p = parsePrompt('con Ligabue! e Vasco');
+    expect(p.seeds).toContain('Ligabue');
+    expect(p.seeds).toContain('Vasco');
+  });
+
+  it('refuso "dwe": "cena per due" attiva il vibe romantico', () => {
+    expect(parsePrompt('playlist per una cena per due').vibe).toBe('romantico');
+  });
 });

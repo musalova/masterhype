@@ -1,13 +1,13 @@
 import { upNext, searchSongs, charts } from './ytmusic';
-import { deezerRelatedArtists, deezerArtistTop, deezerChart, lastfmSimilarArtists, lastfmSimilarTracks, lastfmArtistTags, lastfmTagTopArtists, lastfmTagTopTracks, spotifyConnected, spotifyNewReleases } from './sources';
+import { deezerRelatedArtists, deezerArtistTop, deezerChart, lastfmSimilarArtists, lastfmSimilarTracks, tagTopArtists, tagTopTracks, spotifyConnected, spotifyNewReleases, artistGenreTags, mbArtistTags } from './sources';
 import { tasteProfile, listTracks, remoteLikes, negativeTracks, recentlyPlayed } from './library';
-import { contextBoosts, cooccurring, trackAffinity } from './engine';
+import { contextBoosts, cooccurring, trackAffinity, artistRawNames } from './engine';
 import { getSettings } from '../settings';
 import { getDb } from '../db';
 import { mapLimit } from './util';
 import type { TrackRef, SuggestedTrack, AssistantRequest, AssistantResult, StationDef } from '../../shared/types';
 import { STATIONS } from '../../shared/types';
-import { normText as norm, normTag, trackKey as key, trackBaseKey as baseKey, junkTrack } from '../../shared/taste';
+import { normText as norm, normTag, trackKey as key, trackBaseKey as baseKey, junkTrack, artistWeightBlocked, artistBlockedMatch, artistNameContained, cleanTitle } from '../../shared/taste';
 import { parsePrompt } from './promptParse';
 export { parsePrompt };
 
@@ -85,6 +85,9 @@ const tasteMap = (rows: { value: string; weight: number }[], n: (s: string) => s
 };
 
 function addCand(map: Map<string, Candidate>, title: string, artist: string, source: string, extra?: Partial<Candidate>): void {
+  // Titolo pulito alla fonte: "(Official Video)"/"Artista - Titolo" sporcano
+  // chiave di dedup, query di resolve e display — cleanTitle è idempotente.
+  title = cleanTitle(title, artist);
   // Senza artista reale il candidato non è punteggiabile (né gusto né tag) e
   // in scaletta si vede come "Sconosciuto" — meglio non averlo.
   if (!title || !artist || norm(artist) === 'sconosciuto') return;
@@ -125,12 +128,13 @@ interface TasteCtx {
   artistW: Map<string, number>;   // artista norm → peso decaduto (negativo = bloccato)
   tagW: Map<string, number>;      // tag Last.fm → peso
   genreW: Map<string, number>;    // genere ID3 → peso
-  blocked: string[];              // artisti a peso < 0 (match fuzzy, non esatto)
+  blocked: string[];              // artisti a peso < -1 (match a parole, non sottostringa)
   negKeys: Set<string>;           // baseKey di brani skippati di proposito
   recentKeys: Set<string>;        // baseKey degli ultimi ~30 play (anti-ripetizione)
   affinity: Map<string, number>;  // key completa → saldo brano decaduto
   known: Set<string>;             // artisti con peso > 0
   ctx: Map<string, number>;       // boost orario/giorno 0..1
+  raw: Map<string, string>;       // artista norm → nome reale (per le API esterne)
   maxA: number;
   maxT: number;
   maxG: number;
@@ -142,29 +146,25 @@ function tasteCtx(u: number): TasteCtx {
   const genreW = tasteMap(tasteProfile(u, 'genre'), normTag);
   return {
     artistW, tagW, genreW,
-    blocked: [...artistW].filter(([, w]) => w < 0).map(([a]) => a),
+    blocked: [...artistW].filter(([, w]) => artistWeightBlocked(w)).map(([a]) => a),
     negKeys: new Set(negativeTracks(u).map((t) => baseKey(t.artist, t.title))),
     recentKeys: new Set(recentlyPlayed(30, u).map((t) => baseKey(t.artist, t.title))),
     affinity: trackAffinity(u),
     known: new Set([...artistW].filter(([, w]) => w > 0).map(([a]) => a)),
     ctx: contextBoosts(u),
+    raw: artistRawNames(u),
     maxA: Math.max(1, ...[...artistW.values()].map((w) => Math.max(0, w))),
     maxT: Math.max(1, ...[...tagW.values()].map((w) => Math.abs(w))),
     maxG: Math.max(1, ...[...genreW.values()].map((w) => Math.abs(w))),
   };
 }
 
-// Artista bloccato: match FUZZY — "Jovanotti" blocca anche "Jovanotti feat. X"
-// e "Lorenzo Jovanotti". Lo stesso criterio dell'esclusione dell'assistente:
-// un match esatto lasciava passare le collaborazioni e gli alias.
+// Artista bloccato: match a PAROLE INTERE (shared.artistBlockedMatch) —
+// "Jovanotti" blocca "Jovanotti feat. X" e "Lorenzo Jovanotti Cherubini",
+// ma NON sottostringhe casuali: "nas" non copre "anastacia"/"jonas brothers",
+// "sanremo" non copre "r.e.m.", "max pezzali" non copre "max".
 function artistBlocked(t: TasteCtx, artist: string): boolean {
-  const a = norm(artist);
-  if (!a) return false;
-  for (const b of t.blocked) {
-    if (b.length < 3) continue;
-    if (a === b || a.includes(b) || b.includes(a)) return true;
-  }
-  return false;
+  return t.blocked.some((b) => artistBlockedMatch(b, artist));
 }
 
 // Affinità dei tag Last.fm di un artista col profilo: quota pesata dei tag
@@ -288,9 +288,9 @@ export async function suggest(u: number, limit = 25): Promise<SuggestedTrack[]> 
   // Scoring: pesi artista possono essere negativi (skip/unlike) -> penalità
   const scored = await mapLimit(cands.slice(0, 60), 8, async (c) => {
     const w = t.artistW.get(norm(c.artist)) ?? 0;
-    if (w < 0) return { c, score: -1, tags: [] as string[] }; // artista "disliked": sottozero
+    if (artistWeightBlocked(w)) return { c, score: -1, tags: [] as string[] }; // artista bloccato: sottozero
     const aAff = w / t.maxA;
-    const tags = await lastfmArtistTags(c.artist);
+    const tags = await artistGenreTags(c.artist);
     const gAff = tagAffinity(t, tags);
     const agreement = c.sources.size / 3;
     const novelty = t.artistW.has(norm(c.artist)) ? 0 : 0.6;
@@ -358,10 +358,15 @@ export async function assistant(u: number, req: AssistantRequest): Promise<Assis
 
   // --- Seed artisti: i loro top brani entrano in testa al pool ---
   const seedTracks: SuggestedTrack[] = [];
+  // Gli affini dei seed restano Candidate (con `key`) finché non passano da
+  // resolveVideoIds: entrare in pool con videoId '' li faceva scartare TUTTI
+  // dal filtro poolOk. Map condivisa tra i seed: un affine a due seed conta
+  // una volta sola (il reason tiene il primo seme che lo ha trovato).
+  const simCands = new Map<string, { c: Candidate; seed: string }>();
   await mapLimit(seeds, 3, async (a) => {
     try {
       for (const t of (await deezerArtistTop(a)).slice(0, 6)) {
-        const isSeedArtist = norm(t.artist).includes(norm(a)) || norm(a).includes(norm(t.artist));
+        const isSeedArtist = artistNameContained(a, t.artist);
         seedTracks.push({
           videoId: '', title: t.title, artist: t.artist, source: 'ytmusic', score: isSeedArtist ? 2 : 1.3,
           reason: isSeedArtist ? `dal seed "${a}"` : `associato a ${a} su Deezer`, sources: ['seed'],
@@ -370,35 +375,43 @@ export async function assistant(u: number, req: AssistantRequest): Promise<Assis
       // e i simili del seed arricchiscono il pool
       const map = new Map<string, Candidate>();
       await candidatesFromArtist(a, map);
-      for (const c of map.values()) {
-        pool.push({
-          videoId: c.videoId ?? '', title: c.title, artist: c.artist,
-          thumbnail: c.thumbnail, durationS: c.durationS, source: 'ytmusic',
-          score: 1.2, reason: `artista affine a ${a}`, sources: [...c.sources],
-        });
-      }
+      for (const c of map.values()) if (!simCands.has(c.key)) simCands.set(c.key, { c, seed: a });
     } catch { /* seed non risolto */ }
   });
-  // Risolvi i videoId dei seed tracks (senza → scartati; artista verificato)
-  await mapLimit(seedTracks, 4, async (t) => {
-    try {
-      const best = (await searchSongs(`${t.artist} ${t.title}`))[0];
-      if (best && artistMatches(t.artist, best.artist)) {
-        t.videoId = best.videoId; t.thumbnail = best.thumbnail; t.durationS = best.durationS;
-      }
-    } catch { /* resta senza */ }
-  });
+  // Risolvi i videoId (senza → scartati; artista verificato): seed tracks con
+  // ricerca fresca, affini via vid_cache come suggest/stazioni (i top dei
+  // simili non si ripagano a ogni CD). In parallelo: due code YT indipendenti.
+  const sims = [...simCands.values()];
+  await Promise.all([
+    mapLimit(seedTracks, 4, async (t) => {
+      try {
+        const best = (await searchSongs(`${t.artist} ${t.title}`))[0];
+        if (best && artistMatches(t.artist, best.artist)) {
+          t.videoId = best.videoId; t.thumbnail = best.thumbnail; t.durationS = best.durationS;
+        }
+      } catch { /* resta senza */ }
+    }),
+    resolveVideoIds(sims.map((x) => x.c), 60),
+  ]);
+  for (const { c, seed } of sims) {
+    if (!c.videoId) continue;
+    pool.push({
+      videoId: c.videoId, title: c.title, artist: c.artist,
+      thumbnail: c.thumbnail, durationS: c.durationS, source: 'ytmusic',
+      score: 1.2, reason: `artista affine a ${seed}`, sources: [...c.sources],
+    });
+  }
   // Ri-ordina il pool: i candidati arricchiti dai seed (score 1.2) devono salire
   if (seeds.length) pool.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
-  // Esclusione robusta: "senza Jovanotti" blocca anche "Jovanotti feat. X" e "Lorenzo Jovanotti"
+  // Esclusione robusta a parole intere: "senza Jovanotti" blocca anche
+  // "Jovanotti feat. X" e "Lorenzo Jovanotti", ma "senza Max Pezzali" non
+  // tocca "Max" e "senza Sanremo" non tocca "R.E.M." (senza guardia <3:
+  // "senza U2" è una richiesta esplicita e va onorata).
   const isExcluded = (a: string) => {
     const na = norm(a);
     if (!na) return false;
-    for (const e of excluded) {
-      if (!e || e.length < 3) continue;
-      if (na === e || na.includes(e) || e.includes(na)) return true;
-    }
+    for (const e of excluded) if (artistNameContained(e, na)) return true;
     return false;
   };
   // I seed dell'utente hanno priorità assoluta: stanno in testa e bypassano il filtro vibe
@@ -412,7 +425,7 @@ export async function assistant(u: number, req: AssistantRequest): Promise<Assis
     const match: SuggestedTrack[] = [];
     const rest: SuggestedTrack[] = [];
     await mapLimit(cands, 8, async (c) => {
-      const t = await lastfmArtistTags(c.artist);
+      const t = await artistGenreTags(c.artist);
       (t.length && t.some((x) => tags.includes(x)) ? match : rest).push(c);
     });
     return [...match, ...rest];
@@ -558,12 +571,29 @@ function stationFilter(list: TrackRef[], u: number): TrackRef[] {
   return stationFilterCtx(list, tasteCtx(u));
 }
 
-// Tag Last.fm per ogni artista candidato (una fetch per artista unico — la
-// cache DB da 7 giorni rende quasi gratis le aperture successive).
-async function artistTagsOf(artists: string[]): Promise<Map<string, string[]>> {
+// Tag/genere per ogni artista candidato: UNA fetch per chiave norm (dedup —
+// "P!nk" e "pnk" sono lo stesso artista). INGRESSO nomi ORIGINALI: norm()
+// serve ai confronti interni, ma alle API distrugge la forma leggibile
+// ("AC/DC"→"acdc" fallisce o trova omonimi). Le chiavi in uscita restano la
+// forma norm: i lookup interni (tags.get(norm(artist))) non cambiano.
+// Sorgenti in cascata: genere ID3 della libreria (offline, gratis) +
+// artistGenreTags (Last.fm → iTunes → MusicBrainz): il gate di genere
+// funziona ANCHE senza chiave Last.fm — parità col telefono.
+async function artistTagsOf(artists: string[], max = 30): Promise<Map<string, string[]>> {
+  const uniq = [...new Map(artists.map((a) => [norm(a), a] as const))].filter(([k]) => k).slice(0, max);
   const out = new Map<string, string[]>();
-  await mapLimit(artists.slice(0, 30), 6, async (a) => {
-    out.set(a, await lastfmArtistTags(a).catch(() => []));
+  // Genere ID3 dai file in libreria: un Queen posseduto ("Rock") non serve
+  // nemmeno la rete per essere classificato.
+  const lib = new Map<string, string>();
+  for (const r of getDb().prepare('SELECT artist, genre FROM tracks WHERE genre IS NOT NULL AND genre != \'\'').all() as { artist: string; genre: string }[]) {
+    const k = norm(r.artist), g = normTag(r.genre);
+    if (k && g && !lib.has(k)) lib.set(k, g);
+  }
+  await mapLimit(uniq, 6, async ([k, a]) => {
+    const set = new Set(await artistGenreTags(a).catch(() => [] as string[]));
+    const g = lib.get(k);
+    if (g) set.add(g);
+    out.set(k, [...set]);
   });
   return out;
 }
@@ -600,14 +630,15 @@ async function stationForYou(u: number): Promise<TrackRef[]> {
     ]);
     // Forza della similarità: posizione nella sua lista × peso della fonte.
     // `orig` conserva il nome originale: le API digeriscono meglio "AC/DC"
-    // della forma normalizzata "ac dc".
+    // della forma normalizzata "acdc".
     const ranked = new Map<string, number>();
     const orig = new Map<string, string>();
     const bump = (list: string[], w: number) => list.forEach((s, i) => {
       const k = norm(s);
       if (k) { ranked.set(k, (ranked.get(k) ?? 0) + w / (1 + i)); if (!orig.has(k)) orig.set(k, s); }
     });
-    bump(co, 1.5); bump(dz, 1); bump(lf, 1);
+    // artist_cooc è in forma norm: per le API serve il nome reale dagli eventi
+    bump(co.map((c) => t.raw.get(c) ?? c), 1.5); bump(dz, 1); bump(lf, 1);
     // I simili vengono scelti per forza E affinità coi gusti PRIMA di
     // espanderli: un artista affine al seme ma in un genere che l'utente
     // skippa non consuma slot né ricerche Deezer.
@@ -616,7 +647,7 @@ async function stationForYou(u: number): Promise<TrackRef[]> {
     const picked = sims
       .map(([s, sc]) => {
         const name = orig.get(s) ?? s;
-        return { s: name, sc, aff: tagAffinity(t, simTags.get(name) ?? []) };
+        return { s: name, sc, aff: tagAffinity(t, simTags.get(s) ?? []) };
       })
       .filter((x) => x.aff > -0.4)
       .sort((a, b) => (b.sc + b.aff * 2) - (a.sc + a.aff * 2))
@@ -628,7 +659,7 @@ async function stationForYou(u: number): Promise<TrackRef[]> {
     });
   });
   const cands = [...map.values()].filter((c) => candOk(t, c));
-  const tags = await artistTagsOf([...new Set(cands.map((c) => norm(c.artist)))]);
+  const tags = await artistTagsOf(cands.map((c) => c.artist));
   const scored = cands.map((c) => {
     const a = norm(c.artist);
     const s =
@@ -695,11 +726,34 @@ async function stationNovita(u: number): Promise<TrackRef[]> {
   ytChart.forEach((tr, i) => addCand(map, tr.title, tr.artist, 'chart', { videoId: tr.videoId, thumbnail: tr.thumbnail, durationS: tr.durationS, rank: i }));
   dzChart.forEach((tr) => addCand(map, tr.title, tr.artist, 'chart', { rank: tr.rank }));
   spNew.forEach((tr, i) => addCand(map, tr.title, tr.artist, 'new', { rank: i }));
-  const cands = [...map.values()].filter((c) => !artistBlocked(t, c.artist) && !t.negKeys.has(baseKey(c.artist, c.title)));
+  let cands = [...map.values()].filter((c) => !artistBlocked(t, c.artist) && !t.negKeys.has(baseKey(c.artist, c.title)));
   // Rete di co-ascolto dei top artisti: affinità "tua" senza bisogno di Last.fm
   const coNet = new Set<string>();
   for (const a of [...t.known].slice(0, 10)) for (const o of cooccurring(u, a, 4)) coNet.add(o);
-  const tags = await artistTagsOf([...new Set(cands.map((c) => norm(c.artist)))]);
+  const tags = await artistTagsOf(cands.map((c) => c.artist));
+  // Coerenza coi gusti: la chart infilava nicchie fuori tema (baby-dance,
+  // uploader locali) perché il rank bastava a entrare. Ora l'artista deve
+  // condividere almeno un genere/tag col profilo — verificabile anche senza
+  // chiave (iTunes/MB/ID3). Un artista già amato o non verificabile resta;
+  // profilo muto o filtro troppo cinico → pool intero.
+  const likedGenres = [...new Set([...t.tagW, ...t.genreW].filter(([, w]) => w > 0.3).map(([g]) => g))];
+  if (likedGenres.length) {
+    await mbSecondChance(cands.filter((c) => {
+      const a = norm(c.artist);
+      if ((t.artistW.get(a) ?? 0) > 0) return false;
+      const at = tags.get(a) ?? [];
+      return at.length > 0 && !sceneVeto(at, likedGenres) && wantHits(at, likedGenres) === 0;
+    }), tags, 8);
+    const gated = cands.filter((c) => {
+      const a = norm(c.artist);
+      if ((t.artistW.get(a) ?? 0) > 0) return true;
+      const at = tags.get(a) ?? [];
+      if (!at.length) return true;
+      if (sceneVeto(at, likedGenres)) return false;
+      return wantHits(at, likedGenres) >= 1;
+    });
+    if (gated.length >= 10) cands = gated;
+  }
   const scored = cands.map((c) => {
     const a = norm(c.artist);
     const w = t.artistW.get(a) ?? 0;
@@ -784,6 +838,39 @@ function wantHits(artistTags: string[], want: string[]): number {
     || (x.length > 2 && w.length > 2 && (x.includes(w) || w.includes(x))))).length;
 }
 
+// Scene/nicchie che "contengono" parole-tema senza esserne sottogeneri:
+// 'indian pop' non è pop da Festa, 'children's music' non è pop da classifica,
+// 'hindi filmi' non è pop italiano. Se un tag-scena dell'artista NON è a sua
+// volta richiesto dal tema, squalifica l'artista anche quando un'altra
+// etichetta collima per sottostringa (è il veto che chiude il leak Bollywood).
+// Junk universale: fuori tema in QUALSIASI paese (compilation, karaoke, kids).
+const OFF_THEME_JUNK = /\b(children|kids|toddler|nursery|lullab\w*|karaoke|tribute)\b/i;
+// Scene regionali: mainstream nel loro mercato, leak altrove. Il veto si
+// calibra su settings.country — in India Bollywood È il pop locale, non rumore.
+const OFF_THEME_REGIONAL: [RegExp, string[]][] = [
+  [/\b(bollywood|punjabi|bhangra|desi|filmi|hindi|tamil|telugu|kollywood|tollywood)\b/i, ['IN', 'PK', 'BD', 'LK', 'NP', 'BT', 'MV']],
+];
+const sceneVeto = (artistTags: string[], want: string[]): boolean => {
+  const cc = (getSettings().country ?? 'IT').toUpperCase();
+  return artistTags.some((x) => {
+    if (wantHits([x], want) > 0) return false; // la scena È il tema richiesto
+    if (OFF_THEME_JUNK.test(x)) return true;
+    return OFF_THEME_REGIONAL.some(([re, home]) => re.test(x) && !home.includes(cc));
+  });
+};
+
+// Seconda chance MusicBrainz per gli artisti in procinto di cadere dal gate:
+// il primaryGenre iTunes è uno solo e perde sfumature (Vasco iTunes='Rock' —
+// fuori da "Italiana" — mentre MB lo tagga italian/pop/singer-songwriter).
+// Bounded: ≤cap lookup, pacing 1 req/s interno, cache artist_genres perenne.
+async function mbSecondChance(fails: Candidate[], tags: Map<string, string[]>, cap = 10): Promise<void> {
+  for (const c of fails.slice(0, cap)) {
+    const a = norm(c.artist);
+    const mb = await mbArtistTags(c.artist).catch(() => [] as string[]);
+    if (mb.length) tags.set(a, [...(tags.get(a) ?? []), ...mb]);
+  }
+}
+
 async function stationQuery(u: number, def: StationDef): Promise<TrackRef[]> {
   const t = tasteCtx(u);
   const map = new Map<string, Candidate>();
@@ -801,8 +888,8 @@ async function stationQuery(u: number, def: StationDef): Promise<TrackRef[]> {
     : (wantTags ?? []).slice(0, 2);
   for (const stag of seedTags) {
     const [tagArtists, tagTracks] = await Promise.all([
-      lastfmTagTopArtists(stag).catch(() => [] as string[]),
-      lastfmTagTopTracks(stag).catch(() => [] as { title: string; artist: string }[]),
+      tagTopArtists(stag).catch(() => [] as string[]),
+      tagTopTracks(stag).catch(() => [] as { title: string; artist: string }[]),
     ]);
     tagTracks.slice(0, seedTags.length > 1 ? 7 : 12).forEach((tr, i) => addCand(map, tr.title, tr.artist, 'tagtracks', { rank: i }));
     const ranked = tagArtists.slice(0, 16)
@@ -826,7 +913,7 @@ async function stationQuery(u: number, def: StationDef): Promise<TrackRef[]> {
     const prof = tasteProfile(u, 'artist').filter((r) => r.weight > 1).slice(0, 18).map((r) => r.value);
     const matched: string[] = [];
     await mapLimit(prof, 6, async (a) => {
-      const at = await lastfmArtistTags(a).catch(() => [] as string[]);
+      const at = await artistGenreTags(a).catch(() => [] as string[]);
       if (wantHits(at, wantTags) >= needed) matched.push(a);
     });
     await mapLimit(shuffle(matched).slice(0, 4), 3, async (a) => {
@@ -839,16 +926,27 @@ async function stationQuery(u: number, def: StationDef): Promise<TrackRef[]> {
   // Affinità coi gusti anche dentro il tema: a parità di query salgono gli
   // artisti nei generi che l'utente ama e scendono quelli che skippa.
   const rankAndScore = async () => {
-    const tags = await artistTagsOf([...new Set(cands.map((c) => norm(c.artist)))]);
-    if (def.genre && wantTags?.length) {
-      // Fedeltà al genere: fonti nate dal tag sempre dentro; le altre solo se i
-      // tag Last.fm dell'artista confermano il tema. Artista senza tag (non
-      // verificabile): passa, la query del genere l'ha già selezionato. Se il
-      // filtro svuotasse troppo la scaletta si ripiega sul pool intero.
+    const tags = await artistTagsOf(cands.map((c) => c.artist));
+    if (wantTags?.length && def.group !== 'decennio') {
+      // Fedeltà al tema: fonti nate dal tag sempre dentro; le altre solo se i
+      // tag/genere dell'artista confermano il tema — i tag ora arrivano da
+      // Last.fm, iTunes, MusicBrainz e genere ID3, quindi il gate vale anche
+      // senza chiave (e copre i MOOD: Bollywood fuori da "Festa", stock/AI
+      // fuori da "Chill"). Artista senza info: passa. I decenni non hanno un
+      // genere da verificare: lì il gate sarebbe solo un costo. Se il filtro
+      // svuotasse troppo la scaletta si ripiega sul pool intero.
+      // Seconda chance prima di scartare: primaryGenre iTunes 'rock' non dice
+      // che Vasco è anche 'italian' — MusicBrainz sì (solo sui drop-bound).
+      await mbSecondChance(cands.filter((c) => {
+        if (c.sources.has('tag') || c.sources.has('tagtracks')) return false;
+        const at = tags.get(norm(c.artist)) ?? [];
+        return at.length > 0 && !sceneVeto(at, wantTags) && wantHits(at, wantTags) === 0;
+      }), tags);
       const gated = cands.filter((c) => {
         if (c.sources.has('tag') || c.sources.has('tagtracks')) return true;
         const at = tags.get(norm(c.artist)) ?? [];
         if (!at.length) return true;
+        if (sceneVeto(at, wantTags)) return false;
         return wantHits(at, wantTags) >= 1;
       });
       if (gated.length >= 8) cands = gated;
@@ -949,18 +1047,16 @@ export async function stationContinue(u: number, videoId: string, artist: string
         .map(([x]) => x);
     }
   }
-  const tagMap = new Map<string, string[]>();
-  if (wantTags.length) {
-    const uniq = [...new Set(fresh.map((x) => norm(x.artist)))].slice(0, 15);
-    await mapLimit(uniq, 6, async (a) => { tagMap.set(a, await lastfmArtistTags(a).catch(() => [])); });
-  }
+  const tagMap = wantTags.length
+    ? await artistTagsOf(fresh.map((x) => x.artist), 15)
+    : new Map<string, string[]>();
   const scored = fresh.map((c, i) => {
     const a = norm(c.artist);
     let s = Math.max(-1, Math.min(1, (t.artistW.get(a) ?? 0) / t.maxA)) * 1.1
       + trackAff(t, c.artist, c.title) * 0.5
       + (1 - i / Math.max(1, ups.length)) * 0.35; // il rank upNext resta un segnale
-    if (seedArtist && artistMatches(seedArtist, c.artist)) s += 1.3;
-    if (artistMatches(artist, c.artist)) s += 0.7; // resta vicino a ciò che suona
+    if (seedArtist && artistNameContained(seedArtist, c.artist)) s += 1.3;
+    if (artistNameContained(artist, c.artist)) s += 0.7; // resta vicino a ciò che suona
     // Ancora al tema con match substring ("italian trap" ↔ "trap"): il match
     // esatto lasciava derivare le radio di genere a ogni continuazione.
     if (wantTags.length) s += wantHits(tagMap.get(a) ?? [], wantTags) ? 0.9 : -0.35;
@@ -990,11 +1086,11 @@ export async function stationContinue(u: number, videoId: string, artist: string
 async function finalizeRadio(map: Map<string, Candidate>, u: number, seedArtist?: string): Promise<TrackRef[]> {
   const t = tasteCtx(u);
   const cands = [...map.values()].filter((c) => candOk(t, c));
-  const tags = await artistTagsOf([...new Set(cands.map((c) => norm(c.artist)))]);
+  const tags = await artistTagsOf(cands.map((c) => c.artist));
   const seedN = seedArtist ? norm(seedArtist) : '';
   const scored = cands.map((c) => {
     const a = norm(c.artist);
-    const isSeed = !!(seedN && artistMatches(seedN, c.artist));
+    const isSeed = !!(seedN && artistNameContained(seedN, c.artist));
     const s =
       (isSeed ? 2.2 : 0) +
       Math.min(1, (c.sim ?? 0) / 2.5) * 0.9 +
@@ -1043,16 +1139,19 @@ export async function radioForArtist(u: number, name: string): Promise<TrackRef[
     lastfmSimilarArtists(name).catch(() => [] as string[]),
   ]);
   const simRank = new Map<string, number>();
+  const simOrig = new Map<string, string>();
   const bump = (list: string[], w: number) => list.forEach((s, i) => {
     const k = norm(s);
-    if (k) simRank.set(k, (simRank.get(k) ?? 0) + w / (1 + i));
+    if (k) { simRank.set(k, (simRank.get(k) ?? 0) + w / (1 + i)); if (!simOrig.has(k)) simOrig.set(k, s); }
   });
   bump(dz, 1); bump(lf, 1.2);
-  // Chi ascolti insieme al seed sale di più: il segnale personale vince
-  bump(cooccurring(u, name, 4), 1.5);
+  // Chi ascolti insieme al seed sale di più: il segnale personale vince.
+  // artist_cooc è in forma norm — il nome reale (per le API) viene dagli eventi.
+  const raw = artistRawNames(u);
+  bump(cooccurring(u, name, 4).map((c) => raw.get(c) ?? c), 1.5);
   const sims = [...simRank.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
   await mapLimit(sims, 4, async ([s, sc]) => {
-    for (const tr of (await deezerArtistTop(s).catch(() => [])).slice(0, 3)) {
+    for (const tr of (await deezerArtistTop(simOrig.get(s) ?? s).catch(() => [])).slice(0, 3)) {
       addCand(map, tr.title, tr.artist, 'similar', { sim: sc });
     }
   });
@@ -1070,8 +1169,8 @@ export async function radioForGenre(u: number, tag: string): Promise<TrackRef[]>
   const t = tasteCtx(u);
   const map = new Map<string, Candidate>();
   const [artists, tracks] = await Promise.all([
-    lastfmTagTopArtists(tag).catch(() => [] as string[]),
-    lastfmTagTopTracks(tag).catch(() => [] as { title: string; artist: string }[]),
+    tagTopArtists(tag).catch(() => [] as string[]),
+    tagTopTracks(tag).catch(() => [] as { title: string; artist: string }[]),
   ]);
   tracks.slice(0, 15).forEach((tr, i) => addCand(map, tr.title, tr.artist, 'tagtracks', { rank: i }));
   // Artisti del tag ordinati per (rilevanza nel tag + peso nei tuoi gusti)

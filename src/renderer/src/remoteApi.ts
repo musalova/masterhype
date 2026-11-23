@@ -161,6 +161,7 @@ export const remoteApi: MasterHypeApi = {
     play: (id) => call(IPC.libraryPlay, id),
     skip: (id) => call(IPC.librarySkip, id),
     importFiles: () => Promise.resolve(0), // niente file system del PC dal telefono
+    coverData: (id) => call(IPC.libraryCover, id), // data: URI (per MediaImage.src)
     recent: (l) => cached<TrackRef[]>(`mh-recent-cache:u${myUserId()}`, () => call(IPC.libraryRecent, l))
       .then(async (r) => {
         if (isOnline()) return r;

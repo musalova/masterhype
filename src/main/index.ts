@@ -17,9 +17,10 @@ import { findUpdateSource } from './update';
 import { allowedNavigation } from './navGuard';
 import { statSync } from 'fs';
 import { IPC } from '../shared/types';
+import { gsDecode } from '../shared/eqRelay';
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: false } },
+  { scheme: 'media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: false } },
 ]);
 
 // Player musicale: play() deve poter partire anche dopo l'attesa di streamUrl()
@@ -184,12 +185,27 @@ app.whenReady().then(() => {
   setPlayerStateListener(onNowPlaying);
 
   // media://audio/<id> -> file mp3 (con Range) ; media://cover/<id> -> copertina
-  protocol.handle('media', (req) => {
+  // media://gs/<b64url> -> relay CORS degli stream (googlevideo non manda
+  //   Access-Control-Allow-Origin: servirebbe per l'equalizzatore Web Audio,
+  //   che silenzia le sorgenti "tainted"; net.fetch qui è lato main = no CORS).
+  protocol.handle('media', async (req) => {
     const u = new URL(req.url);
+    // ACAO su OGNI risposta: il documento è file:// → media:// è cross-origin
+    // e l'equalizzatore carica gli elementi in crossOrigin='anonymous'.
+    const cors = (r: Response) => {
+      const h = new Headers(r.headers);
+      h.set('Access-Control-Allow-Origin', '*');
+      return new Response(r.body, { status: r.status, statusText: r.statusText, headers: h });
+    };
+    if (u.hostname === 'gs') {
+      const target = gsDecode(u.pathname.replace(/^\//, ''));
+      if (!target) return new Response('forbidden', { status: 403 });
+      return cors(await net.fetch(target, { headers: req.headers }));
+    }
     const id = parseInt(u.pathname.replace(/^\//, ''), 10);
     const t = Number.isFinite(id) ? getTrack(id) : undefined;
-    if (u.hostname === 'audio' && t?.filePath) return net.fetch(pathToFileURL(t.filePath).toString(), { headers: req.headers });
-    if (u.hostname === 'cover' && t?.coverPath) return net.fetch(pathToFileURL(t.coverPath).toString());
+    if (u.hostname === 'audio' && t?.filePath) return cors(await net.fetch(pathToFileURL(t.filePath).toString(), { headers: req.headers }));
+    if (u.hostname === 'cover' && t?.coverPath) return cors(await net.fetch(pathToFileURL(t.coverPath).toString()));
     return new Response('not found', { status: 404 });
   });
 

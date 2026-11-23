@@ -56,10 +56,12 @@ function AppearanceCard() {
 
 function Row({ label, sub, children }: { label: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-6 py-3.5 border-b border-line/50 last:border-0">
+    // <640px la riga va in colonna: i controlli larghi (swatch, input lunghi)
+    // non schiacciano più il testo a una parola per riga
+    <div className="flex items-center justify-between gap-x-6 gap-y-2 py-3.5 border-b border-line/50 last:border-0 max-sm:flex-col max-sm:items-stretch">
       <div className="min-w-0">
         <div className="text-sm font-medium">{label}</div>
-        {sub && <div className="text-xs text-dim mt-0.5">{sub}</div>}
+        {sub && <div className="text-xs text-dim mt-0.5 break-words">{sub}</div>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -367,7 +369,7 @@ function DesktopUpdateCard({ s, save }: { s: Settings; save: (p: Partial<Setting
         <input value={feed} onChange={(e) => setFeed(e.target.value)} onBlur={() => void saveFeed()}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
           placeholder="github.com/…/releases/latest/download" spellCheck={false}
-          className="w-56 bg-panel2 border border-line rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent font-mono" />
+          className="w-56 max-sm:w-full bg-panel2 border border-line rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent font-mono" />
       </Row>
       <Row label="App Android per i telefoni"
         sub={info?.apk
@@ -741,50 +743,57 @@ export default function Settings() {
   // PC (profilo locale, aspetto, sezione telefono/self-test) devono comunque
   // rendersi: le preferenze locali restano modificabili senza PC.
   if (!s && isRemote()) return (
-    <div className="p-4 md:p-8 overflow-y-auto h-full max-w-3xl">
-      <BackLink to="home" label="Home" />
-      <SectionTitle title="Impostazioni" />
-      <AppearanceCard />
-      <ProfilesCard />
-      <div className="bg-panel border border-line rounded-xl px-5 mb-6">
-        <div className="py-3 text-xs font-bold text-dim uppercase tracking-wider border-b border-line/50 flex items-center gap-1.5">
-          <Smartphone size={13} /> Telefono e tablet
+    // Lo scroll vive sul contenitore a TUTTA larghezza (scrollbar al bordo
+    // finestra); la colonna stretta è un wrapper interno.
+    <div className="p-4 md:p-8 overflow-y-auto h-full">
+      <div className="max-w-3xl">
+        <BackLink to="home" label="Home" />
+        <SectionTitle title="Impostazioni" />
+        <AppearanceCard />
+        <ProfilesCard />
+        <div className="bg-panel border border-line rounded-xl px-5 mb-6">
+          <div className="py-3 text-xs font-bold text-dim uppercase tracking-wider border-b border-line/50 flex items-center gap-1.5">
+            <Smartphone size={13} /> Telefono e tablet
+          </div>
+          <PhoneRemoteSection />
         </div>
-        <PhoneRemoteSection />
+        <DataCard onImported={loadTaste} />
+        <TasteCard taste={taste} reload={loadTaste} />
+        {!hasRemoteConf() && (
+          <div className="text-xs text-dim -mt-3 mb-6">
+            Le impostazioni di libreria, audio e integrazioni vivono sul PC — appariranno qui quando lo colleghi.
+          </div>
+        )}
       </div>
-      <DataCard onImported={loadTaste} />
-      <TasteCard taste={taste} reload={loadTaste} />
-      {!hasRemoteConf() && (
-        <div className="text-xs text-dim -mt-3 mb-6">
-          Le impostazioni di libreria, audio e integrazioni vivono sul PC — appariranno qui quando lo colleghi.
-        </div>
-      )}
     </div>
   );
   if (!s) return (
-    <div className="p-4 md:p-8 overflow-y-auto h-full max-w-3xl">
-      <BackLink to="home" label="Home" />
-      <SectionTitle title="Impostazioni" />
-      <LoadingState label="Recupero le tue impostazioni…" layout="inline" />
-      {[4, 2, 3].map((rows, c) => (
-        <div key={c} className="bg-panel border border-line rounded-xl px-5 mb-6">
-          <Skeleton className="h-3 w-40 my-4" />
-          {Array.from({ length: rows }).map((_, i) => (
-            <div key={i} className="flex items-center justify-between gap-6 py-3.5 border-b border-line/50 last:border-0">
-              <div className="space-y-1.5 flex-1">
-                <Skeleton className="h-3.5 w-1/3" />
-                <Skeleton className="h-2.5 w-1/2" />
+    <div className="p-4 md:p-8 overflow-y-auto h-full">
+      <div className="max-w-3xl">
+        <BackLink to="home" label="Home" />
+        <SectionTitle title="Impostazioni" />
+        <LoadingState label="Recupero le tue impostazioni…" layout="inline" />
+        {[4, 2, 3].map((rows, c) => (
+          <div key={c} className="bg-panel border border-line rounded-xl px-5 mb-6">
+            <Skeleton className="h-3 w-40 my-4" />
+            {Array.from({ length: rows }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between gap-6 py-3.5 border-b border-line/50 last:border-0">
+                <div className="space-y-1.5 flex-1">
+                  <Skeleton className="h-3.5 w-1/3" />
+                  <Skeleton className="h-2.5 w-1/2" />
+                </div>
+                <Skeleton className="h-6 w-10 rounded-full" />
               </div>
-              <Skeleton className="h-6 w-10 rounded-full" />
-            </div>
-          ))}
-        </div>
-      ))}
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 
   return (
-    <div className="p-4 md:p-8 overflow-y-auto h-full max-w-3xl">
+    <div className="p-4 md:p-8 overflow-y-auto h-full">
+      <div className="max-w-3xl">
       <BackLink to="home" label="Home" />
       <SectionTitle title="Impostazioni" />
 
@@ -954,7 +963,7 @@ export default function Settings() {
             <input type="password" value={s.lastfmApiKey} placeholder="API key…"
               onChange={(e) => setS({ ...s, lastfmApiKey: e.target.value })}
               onBlur={() => save({ lastfmApiKey: s.lastfmApiKey })}
-              className="w-44 bg-panel2 border border-line rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent" />
+              className="w-44 max-sm:flex-1 bg-panel2 border border-line rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent" />
             <button onClick={async () => setLfmOk(await api().lastfm.test(s.lastfmApiKey))}
               className="text-xs px-2.5 py-1.5 rounded-lg bg-panel2 hover:bg-line flex items-center gap-1"><KeyRound size={11} /> Test</button>
             {lfmOk === true && <Check size={15} className="text-emerald-400" />}
@@ -965,13 +974,13 @@ export default function Settings() {
           <input value={s.spotifyClientId} onChange={(e) => setS({ ...s, spotifyClientId: e.target.value })}
             onBlur={() => save({ spotifyClientId: s.spotifyClientId })}
             placeholder="Client ID…"
-            className="w-44 bg-panel2 border border-line rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent" />
+            className="w-44 max-sm:w-full bg-panel2 border border-line rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent" />
         </Row>
         <Row label="Spotify Client Secret">
           <input type="password" value={s.spotifyClientSecret} onChange={(e) => setS({ ...s, spotifyClientSecret: e.target.value })}
             onBlur={() => save({ spotifyClientSecret: s.spotifyClientSecret })}
             placeholder="Client Secret…"
-            className="w-44 bg-panel2 border border-line rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent" />
+            className="w-44 max-sm:w-full bg-panel2 border border-line rounded-lg px-3 py-1.5 text-xs outline-none focus:border-accent" />
         </Row>
         <Row label="Collega account Spotify" sub={spConnected ? 'Connesso — puoi importare i tuoi top artisti' : 'Importa i tuoi gusti da Spotify'}>
           {/* Il collegamento (OAuth) apre il browser sul PC; l'import dei gusti
@@ -1088,6 +1097,7 @@ export default function Settings() {
         <SetIcon size={12} className="inline mr-1" />
         MasterHype scarica audio da YouTube Music per uso personale e masterizza su CD-R. Le API opzionali
         (Last.fm, Spotify) servono solo per i suggerimenti e restano sul tuo PC.
+      </div>
       </div>
     </div>
   );

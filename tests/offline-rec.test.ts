@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { likedTracks, offlineSuggest, offlineStation, cachedAuto } from '../src/renderer/src/offlineRec';
 import type { LibraryTrack, RemoteLike } from '../src/shared/types';
+
+// Nessun backend né rete esterna: i gate iTunes/MusicBrainz (itunesGenreOf)
+// devono fallire in fetch come da contratto "rete assente", senza attese reali.
+vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('rete assente (test)'); }));
 
 // Fallback offline del motore gusti (PC spento): verifica delle parti pure —
 // likedTracks, offlineSuggest, e i rami di offlineStation che non toccano la

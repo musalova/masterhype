@@ -33,7 +33,9 @@ vi.mock('../src/main/services/library', () => ({
 
 import { suggest, assistant } from '../src/main/services/recommend';
 
-describe('assistant live', () => {
+// Chiamate di rete REALI (Deezer/YouTube): flaky e rate-limitabili, escluse
+// dal vitest run di default. Si eseguono solo con MH_LIVE=1 → `npm run test:live`.
+describe.skipIf(!process.env.MH_LIVE)('assistant live', () => {
   it('non deve produrre duplicati title+artist', async () => {
     const res = await assistant(1, { vibe: 'energico', targetMinutes: 80, discoveryPct: 40 });
     console.log('TRACKS:', res.tracks.length, 'explanation:', res.explanation);

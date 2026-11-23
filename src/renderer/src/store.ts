@@ -16,6 +16,7 @@ import { cachedAuto, cacheAuto, offlineStation, offlineRadio } from './offlineRe
 import { phoneReconcile, phoneIndex, phoneIndexPut, phoneIndexDel, phonePut, phoneDel, phoneInvalidate, phoneVidId, phoneMigrateId, phoneEvictOldest, phoneFreeMB } from './phoneLocal';
 import { trackKey } from '../../shared/taste';
 import { nextShuffleIndex, shuffleKey } from './shuffle';
+import { playNextAt, movedQueue, clearedQueue } from './queueOps';
 
 // Chiavi legacy → mh-pref-*: oggi per-dispositivo (solo mh-pref-cdqueue
 // resta condivisa col PC — whitelist in persist.ts). ECCEZIONE 'mh-volume':
@@ -103,6 +104,10 @@ interface AppState {
   play: (t: TrackRef | LibraryTrack, queue?: (TrackRef | LibraryTrack)[], index?: number, radio?: boolean) => void;
   playAt: (index: number) => void;
   enqueue: (t: TrackRef | LibraryTrack) => void; // "Aggiungi in coda" stile Spotify
+  playNext: (t: TrackRef | LibraryTrack) => void; // "Riproduci subito dopo" stile Spotify
+  moveQueue: (from: number, to: number) => void; // riordino drag&drop nella coda
+  clearQueue: () => void;                        // svuota la coda (resta il brano in riproduzione)
+  saveQueueAsPlaylist: (name: string) => Promise<void>;
   removeFromQueue: (index: number) => void;
   // Sleep timer (stile Spotify): minuti → pausa; 'end' = a fine brano
   sleepAt: number | null;
@@ -374,6 +379,48 @@ export const useApp = create<AppState>((set, get) => ({
     if (dup || s.player.current.videoId === t.videoId) { s.toast('Già in coda', 'info'); return; }
     set((x) => ({ player: { ...x.player, queue: [...x.player.queue, t as TrackRef & { local?: boolean }] } }));
     s.toast(`In coda: ${t.title}`, 'ok');
+  },
+  // "Riproduci subito dopo" stile Spotify: in coda se già presente non si
+  // duplica, si sposta subito dopo il brano in riproduzione (queueOps pure).
+  playNext: (t) => {
+    const s = get();
+    const tr = t as TrackRef & { local?: boolean };
+    if (!s.player.current) { s.play(tr); return; }
+    const r = playNextAt(s.player.queue, s.player.queueIndex, tr);
+    if (!r) { s.toast('È il brano in riproduzione', 'info'); return; }
+    set((x) => ({ player: { ...x.player, queue: r.queue, queueIndex: r.queueIndex } }));
+    s.toast(`Prossima: ${tr.title}`, 'ok');
+  },
+  // Riordino drag&drop: il brano in riproduzione non cambia, solo la posizione.
+  moveQueue: (from, to) => {
+    const s = get();
+    const r = movedQueue(s.player.queue, s.player.queueIndex, from, to);
+    if (r.queue !== s.player.queue) set((x) => ({ player: { ...x.player, queue: r.queue, queueIndex: r.queueIndex } }));
+  },
+  // Stile Spotify: "svuota" lascia solo il brano in riproduzione — la coda è
+  // ciò che viene dopo, non ciò che sta suonando.
+  clearQueue: () => {
+    const s = get();
+    const r = clearedQueue(s.player.queue, s.player.queueIndex);
+    set((x) => ({ player: { ...x.player, queue: r.queue, queueIndex: r.queueIndex } }));
+  },
+  // La coda diventa una playlist 'lista': create+addRef sono local-first
+  // (offline crea la riga temp sul telefono e drena dopo), per-utente.
+  saveQueueAsPlaylist: async (name) => {
+    const s = get();
+    const q = s.player.queue;
+    if (!q.length) { s.toast('Coda vuota', 'info'); return; }
+    try {
+      const pl = await api().playlists.create(name.trim() || 'Coda salvata', 'lista');
+      let ok = 0;
+      for (const t of q) {
+        try { await api().playlists.addRef(pl.id, t); ok++; } catch { /* singolo brano fallito: gli altri entrano */ }
+      }
+      s.toast(`Playlist "${pl.name}" creata (${ok}/${q.length} brani)`, ok ? 'ok' : 'err');
+      if (ok) get().openPlaylistById(pl.id);
+    } catch (e) {
+      s.toast(`Playlist non creata: ${e instanceof Error ? e.message : e}`, 'err');
+    }
   },
   // Sleep timer stile Spotify: un check ogni 5s; 'end' lo consuma PlayerBar
   // all'onEnded del brano corrente.

@@ -51,6 +51,23 @@
             android:name=".PlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Android Auto: browse di Stazioni/Preferiti/Playlist sullo schermo
+             dell'auto. exported=true OBBLIGATORIO: l'host Auto si aggancia al
+             servizio da fuori (la browse tree arriva da AutoCache, mai dati
+             sensibili — token e segreti non escono dall'app). -->
+        <service
+            android:name=".AutoBrowseService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <!-- Android Auto riconosce l'app come multimediale -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
     </application>
 
     <!-- Permissions -->

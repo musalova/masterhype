@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, CameraOff } from 'lucide-react';
 import jsQR from 'jsqr';
+import { pushBack } from '../backStack';
 
 // Scanner QR in-app per il pairing: fotocamera via getUserMedia (il WebChrome
 // client nativo di Capacitor converte la richiesta in permesso CAMERA di
@@ -9,6 +10,9 @@ import jsQR from 'jsqr';
 export default function QrScanner({ onCode, onClose }: { onCode: (text: string) => void; onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [err, setErr] = useState('');
+
+  // Tasto indietro Android = "Annulla" (e spegne la fotocamera via onClose)
+  useEffect(() => pushBack(() => { onClose(); return true; }), [onClose]);
 
   useEffect(() => {
     let stream: MediaStream | null = null;

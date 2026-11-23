@@ -1,6 +1,6 @@
 import { getDb } from '../db';
 import type { LibraryTrack, Playlist, AppStats, RemoteLike, TrackRef } from '../../shared/types';
-import { signalWeight, TAG_SPILL } from '../../shared/taste';
+import { signalWeight, TAG_SPILL, cleanTitle } from '../../shared/taste';
 import { existsSync, copyFileSync, mkdirSync } from 'fs';
 import { basename, extname, join } from 'path';
 import { createHash } from 'crypto';
@@ -10,7 +10,10 @@ function rowToTrack(r: any): LibraryTrack {
   return {
     id: r.id,
     videoId: r.video_id,
-    title: r.title,
+    // Titoli archiviati pre-cleanup (o da import file coi tag sporchi): la
+    // ripulitura è di sola lettura — il DB conserva l'originale, chi legge
+    // (UI, burn/CD-Text, staging MP3) vede quello pulito.
+    title: cleanTitle(r.title, r.artist),
     artist: r.artist,
     album: r.album ?? undefined,
     genre: r.genre ?? undefined,
@@ -88,10 +91,14 @@ export function restoreTrack(id: number): void {
 
 export function setLiked(id: number, liked: boolean, u: number): void {
   const db = getDb();
+  // L'evento (e il peso sui gusti) scatta solo sulla TRANSIZIONE di stato:
+  // un unlike su traccia non amata o un like già presente non sono segnali —
+  // code offline compattate e pulizie incrociate li manderebbero in doppio.
+  const had = !!db.prepare('SELECT 1 FROM track_likes WHERE track_id=? AND user_id=?').get(id, u);
   if (liked) db.prepare('INSERT OR REPLACE INTO track_likes (track_id,user_id,ts) VALUES (?,?,?)').run(id, u, Date.now());
   else db.prepare('DELETE FROM track_likes WHERE track_id=? AND user_id=?').run(id, u);
   const t = getTrack(id, u);
-  if (t) recordEvent(id, t.artist, liked ? 'like' : 'unlike', undefined, u);
+  if (t && had !== liked) recordEvent(id, t.artist, liked ? 'like' : 'unlike', { title: t.title, videoId: t.videoId, thumbnail: t.thumbnail }, u);
 }
 
 // play_count resta globale (uso del file); l'evento di ascolto è per-utente
@@ -126,7 +133,7 @@ export function recentlyPlayed(limit = 10, u = 1): TrackRef[] {
   const merged: WithTs[] = [
     ...local.map((r) => ({ ...rowToTrack(r), _ts: (r as { last_play: number }).last_play })),
     ...remote.map((r) => ({
-      videoId: r.video_id, title: r.title, artist: r.artist,
+      videoId: r.video_id, title: cleanTitle(r.title, r.artist), artist: r.artist,
       thumbnail: r.thumbnail ?? undefined, source: 'ytmusic' as const, _ts: r.last_play,
     })),
   ];
@@ -193,21 +200,37 @@ export function importLocalFile(
 
 export function likeRemote(t: { videoId: string; title: string; artist: string; thumbnail?: string; durationS?: number }, liked: boolean, u: number): void {
   const db = getDb();
+  // Il like è sul BRANO: se è in libreria la verità è track_likes (un like
+  // remoto accanto a una riga locale = stato doppio: cuore su entrambe le
+  // liste e doppio segnale al toggle). La riga remota residua si rimuove.
+  const tr = t.videoId
+    ? db.prepare('SELECT id FROM tracks WHERE video_id=? AND deleted_at IS NULL').get(t.videoId) as { id: number } | undefined
+    : undefined;
+  if (tr) {
+    setLiked(tr.id, liked, u);
+    db.prepare('DELETE FROM remote_likes WHERE video_id=? AND user_id=?').run(t.videoId, u);
+    return;
+  }
+  // Come setLiked: il segnale scatta solo sulla transizione — la "pulizia"
+  // di un like remoto inesistente non deve valere un unlike -3.
+  const had = !!db.prepare('SELECT 1 FROM remote_likes WHERE video_id=? AND user_id=?').get(t.videoId, u);
   if (liked) {
     db.prepare('INSERT OR REPLACE INTO remote_likes (video_id,title,artist,thumbnail,duration_s,ts,user_id) VALUES (?,?,?,?,?,?,?)')
       .run(t.videoId, t.title, t.artist, t.thumbnail ?? null, t.durationS ?? null, Date.now(), u);
-    recordEvent(null, t.artist, 'like', undefined, u);
   } else {
     db.prepare('DELETE FROM remote_likes WHERE video_id=? AND user_id=?').run(t.videoId, u);
-    recordEvent(null, t.artist, 'unlike', undefined, u);
   }
+  // title+videoId sono OBBLIGATORI qui: track_id è NULL, quindi il backfill
+  // del boot non ha nulla da cui recuperarli — un like remoto senza titolo
+  // resta invisibile a trackAffinity per sempre.
+  if (had !== liked) recordEvent(null, t.artist, liked ? 'like' : 'unlike', { title: t.title, videoId: t.videoId, thumbnail: t.thumbnail }, u);
 }
 
 export function remoteLikes(u: number): RemoteLike[] {
   const rows = getDb().prepare('SELECT * FROM remote_likes WHERE user_id=? ORDER BY ts DESC').all(u) as
     { video_id: string; title: string; artist: string; thumbnail: string | null; duration_s: number | null; ts: number }[];
   return rows.map((r) => ({
-    videoId: r.video_id, title: r.title, artist: r.artist,
+    videoId: r.video_id, title: cleanTitle(r.title, r.artist), artist: r.artist,
     thumbnail: r.thumbnail ?? undefined, durationS: r.duration_s ?? undefined, ts: r.ts,
   }));
 }
@@ -226,6 +249,19 @@ export function recordEvent(
   meta?: { title?: string; videoId?: string; thumbnail?: string },
   u = 1,
 ): void {
+  // Cintura: title/video_id alimentano trackAffinity, negativeTracks e i
+  // "recenti" — un meta dimenticato su un evento legato a una traccia lo
+  // rendeva invisibile ai gusti fino al backfill del boot successivo (mai
+  // per i remoti: track_id NULL). Si colma qui, alla scrittura.
+  if (trackId != null && (meta?.title == null || meta?.videoId == null)) {
+    const t = getDb().prepare('SELECT title, video_id FROM tracks WHERE id=?').get(trackId) as
+      { title: string | null; video_id: string | null } | undefined;
+    meta = {
+      title: meta?.title ?? t?.title ?? undefined,
+      videoId: meta?.videoId ?? t?.video_id ?? undefined,
+      thumbnail: meta?.thumbnail,
+    };
+  }
   const res = getDb().prepare('INSERT INTO events (track_id, artist, type, title, video_id, thumbnail, ts, user_id) VALUES (?,?,?,?,?,?,?,?)')
     .run(trackId, artist, type, meta?.title ?? null, meta?.videoId ?? null, meta?.thumbnail ?? null, Date.now(), u);
   // Contesto (ora/giorno) + co-occorrenza artisti nella stessa sessione
@@ -248,12 +284,30 @@ export function recordEvent(
   }
 }
 
+// Decadimento temporale dei gusti — UNICA formula, usata in scrittura
+// (bumpTaste, importBackup) e in lettura (tasteProfile): i gusti recenti
+// pesano di più (half-life ~45 giorni); i segnali negativi decadono più
+// lentamente (un "dislike" resta affidabile a lungo, half-life ~90gg).
+// Regola fondamentale: il peso memorizzato è sempre "a updated_at". Prima di
+// sommare un nuovo segnale va decaduto FINO A ORA — sommare il delta al peso
+// grezzo e poi azzerare updated_at resuscita al 100% tutto il peso storico
+// non decaduto (un play su un artista sentito mesi fa lo riportava in cima).
+export const decayedWeight = (w: number, updatedAt: number, now = Date.now()): number => {
+  const days = Math.max(0, (now - updatedAt) / 86_400_000);
+  return w * Math.pow(0.5, days / (w >= 0 ? 45 : 90));
+};
+
 export function bumpTaste(kind: 'artist' | 'genre' | 'tag', value: string, delta: number, u: number): void {
   const db = getDb();
   // I pesi possono scendere sotto zero: un artista "disliked" viene penalizzato nei suggerimenti.
+  const v = value.trim().toLowerCase();
+  const now = Date.now();
+  const prev = db.prepare('SELECT weight, updated_at FROM taste_profile WHERE kind=? AND value=? AND user_id=?')
+    .get(kind, v, u) as { weight: number; updated_at: number } | undefined;
+  const w = (prev ? decayedWeight(prev.weight, prev.updated_at, now) : 0) + delta;
   db.prepare(`INSERT INTO taste_profile (kind,value,weight,updated_at,user_id) VALUES (?,?,?,?,?)
-    ON CONFLICT(kind,value,user_id) DO UPDATE SET weight = weight + excluded.weight, updated_at = excluded.updated_at`)
-    .run(kind, value.trim().toLowerCase(), delta, Date.now(), u);
+    ON CONFLICT(kind,value,user_id) DO UPDATE SET weight = excluded.weight, updated_at = excluded.updated_at`)
+    .run(kind, v, w, now, u);
 }
 
 // Brani da non riproporre: più skip/hide che play = l'utente li salta di proposito.
@@ -274,15 +328,11 @@ export function tasteProfile(u: number, kind?: string): { kind: string; value: s
   const rows = (kind
     ? db.prepare('SELECT * FROM taste_profile WHERE kind=? AND user_id=?').all(kind, u)
     : db.prepare('SELECT * FROM taste_profile WHERE user_id=?').all(u)) as { kind: string; value: string; weight: number; updated_at: number }[];
-  // Decadimento temporale: i gusti recenti pesano di più (half-life ~45 giorni).
-  // I segnali negativi decadono più lentamente: un "dislike" resta affidabile a lungo.
+  // Decadimento in lettura: il peso memorizzato è ancorato a updated_at —
+  // decayedWeight porta a "ora" il residuo non ancora decaduto in scrittura.
   const now = Date.now();
   return rows
-    .map((r) => {
-      const days = Math.max(0, (now - r.updated_at) / 86_400_000);
-      const halfLife = r.weight >= 0 ? 45 : 90;
-      return { kind: r.kind, value: r.value, weight: r.weight * Math.pow(0.5, days / halfLife) };
-    })
+    .map((r) => ({ kind: r.kind, value: r.value, weight: decayedWeight(r.weight, r.updated_at, now) }))
     .sort((a, b) => b.weight - a.weight);
 }
 
@@ -386,7 +436,7 @@ export function reorderPlaylist(playlistId: number, trackIds: number[], u: numbe
 export function recordBurn(name: string, kind: string, tracks: LibraryTrack[], u: number): void {
   getDb().prepare('INSERT INTO burned_cds (name,kind,track_count,ts,user_id) VALUES (?,?,?,?,?)')
     .run(name, kind, tracks.length, Date.now(), u);
-  for (const t of tracks) recordEvent(t.id, t.artist, 'burn', undefined, u);
+  for (const t of tracks) recordEvent(t.id, t.artist, 'burn', { title: t.title, videoId: t.videoId, thumbnail: t.thumbnail }, u);
 }
 
 export function stats(u: number): AppStats {

@@ -12,6 +12,8 @@
 // prossima uscita dal tray. Mai durante una masterizzazione.
 
 import { app } from 'electron';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { autoUpdater } from 'electron-updater';
 import { getSettings } from '../settings';
 import { isBurning } from './burner';
@@ -24,17 +26,26 @@ type NotifyFn = (channel: string, payload: unknown) => void;
 let notify: NotifyFn = () => {};
 let beforeQuit: () => void = () => {};
 
+// In dev (electron .) app.getVersion() legge la package.json di Electron
+// ("45.x"), non la nostra: la versione vera sta nella package.json della root.
+export function appVersion(): string {
+  if (app.isPackaged) return app.getVersion();
+  try {
+    return JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')).version ?? app.getVersion();
+  } catch { return app.getVersion(); }
+}
+
 let state: AppUpdateState = { phase: 'idle', current: '' };
 let wired = false;
 let checking = false;
 
 function setState(p: Partial<AppUpdateState>): void {
-  state = { ...state, ...p, current: app.getVersion() };
+  state = { ...state, ...p, current: appVersion() };
   notify(IPC.appUpdateEvent, state);
 }
 
 export function appUpdateState(): AppUpdateState {
-  return { ...state, current: app.getVersion(), feed: feedUrl() || undefined };
+  return { ...state, current: appVersion(), feed: feedUrl() || undefined };
 }
 
 export function feedUrl(): string {

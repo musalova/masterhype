@@ -215,6 +215,7 @@ export function phoneInvalidate(id: number): void {
     const u = urlCache.get(k);
     if (u) { URL.revokeObjectURL(u); urlCache.delete(k); }
   }
+  dataCoverCache.delete(id);
 }
 
 // Migrazione id sintetico→id reale: un brano scaricato sul telefono con id
@@ -278,7 +279,7 @@ export async function phoneAudioUrl(id: number): Promise<string | null> {
   if (hit) return hit;
   const e = await phoneGet(id);
   if (!e) return null;
-  const u = (await phoneSw()) ? `__phone/${id}` : URL.createObjectURL(e.blob);
+  const u = (await phoneSw()) ? `/__phone/${id}` : URL.createObjectURL(e.blob);
   urlCache.set(key, u);
   return u;
 }
@@ -291,6 +292,31 @@ export async function phoneCoverUrl(id: number): Promise<string | null> {
   const u = URL.createObjectURL(e.cover);
   urlCache.set(key, u);
   return u;
+}
+
+// Copertina come data: URI — per la media session NATIVA Android: il servizio
+// gira nel processo app (fuori dalla WebView) e non raggiunge né blob: né il
+// service worker (/__phone/*). Gli unici payload che attraversano il bridge
+// sono stringhe → la copertina viaggia serializzata in base64.
+// Tetto sul blob sorgente: gli Intent verso il servizio passano Binder
+// (~1MB/transazione, condiviso con gli altri extra) — oltre ~400KB la cover
+// si sacrifica, ma il push di stato della sessione deve sempre passare.
+const PHONE_ART_MAX_BYTES = 400_000;
+const dataCoverCache = new Map<number, string | null>();
+export async function phoneCoverDataUrl(id: number): Promise<string | null> {
+  if (dataCoverCache.has(id)) return dataCoverCache.get(id) ?? null;
+  const e = await phoneGet(id);
+  let out: string | null = null;
+  if (e?.cover && e.cover.size <= PHONE_ART_MAX_BYTES) {
+    out = await new Promise<string | null>((res) => {
+      const r = new FileReader();
+      r.onload = () => res(typeof r.result === 'string' ? r.result : null);
+      r.onerror = () => res(null);
+      r.readAsDataURL(e.cover!);
+    });
+  }
+  dataCoverCache.set(id, out);
+  return out;
 }
 
 // Risoluzione unificata per una traccia qualsiasi: prima l'id libreria,

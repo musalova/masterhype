@@ -159,6 +159,16 @@ export function initDb(): void {
       tags TEXT NOT NULL,      -- JSON array
       fetched_at INTEGER NOT NULL
     );
+    -- Generi artista verificati senza chiave Last.fm: primaryGenre iTunes +
+    -- tag MusicBrainz (stesse fonti del gate del telefono). Cache lunga: i
+    -- generi non cambiano. Si persistono SOLO i positivi — un rate-limit
+    -- non deve diventare "artista senza genere" per sempre.
+    CREATE TABLE IF NOT EXISTS artist_genres (
+      artist TEXT PRIMARY KEY,  -- normText(artista)
+      itunes TEXT,              -- primaryGenreName iTunes (lowercase)
+      mb TEXT,                  -- tag MusicBrainz uniti '|'
+      fetched_at INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS trend_cache (
       source TEXT PRIMARY KEY,
       payload TEXT NOT NULL,

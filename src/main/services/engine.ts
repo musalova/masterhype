@@ -11,9 +11,9 @@
 
 import { getDb } from '../db';
 import { bumpTaste, tasteProfile } from './library';
-import { normText, LISTEN_COMPLETE_WEIGHT, listenClass } from '../../shared/taste';
+import { normText, LISTEN_COMPLETE_WEIGHT, listenClass, junkArtist } from '../../shared/taste';
 import { charts } from './ytmusic';
-import { deezerChart, deezerArtistTop } from './sources';
+import { deezerChart, deezerArtistTop, itunesArtistGenre } from './sources';
 import { getSettings } from '../settings';
 import type { OnboardArtist } from '../../shared/types';
 
@@ -96,6 +96,27 @@ export function contextBoosts(u: number, now = new Date()): Map<string, number> 
 
 // ---- Co-occorrenza: artisti che ascolti insieme ----
 
+// Chiave norm → nome artista reale (la forma più recente negli eventi, poi la
+// libreria): artist_cooc/taste_profile memorizzano la forma normalizzata, ma
+// alle API esterne (Deezer/Last.fm) serve il nome vero — "ac/dc" risolve,
+// "acdc" può fallire o trovare omonimi.
+export function artistRawNames(u: number): Map<string, string> {
+  const m = new Map<string, string>();
+  const put = (artist: string | null | undefined) => {
+    if (!artist) return;
+    const k = normArtist(artist);
+    if (k && !m.has(k)) m.set(k, artist);
+  };
+  try {
+    for (const r of getDb().prepare(
+      `SELECT artist, MAX(ts) AS ts FROM events WHERE user_id=? AND artist IS NOT NULL GROUP BY artist ORDER BY ts DESC`)
+      .all(u) as { artist: string }[]) put(r.artist);
+    for (const r of getDb().prepare('SELECT DISTINCT artist FROM tracks WHERE deleted_at IS NULL AND artist IS NOT NULL')
+      .all() as { artist: string }[]) put(r.artist);
+  } catch { /* */ }
+  return m;
+}
+
 export function cooccurring(u: number, artist: string, limit = 6): string[] {
   const a = normArtist(artist);
   if (!a) return [];
@@ -157,11 +178,26 @@ export async function onboardArtists(): Promise<OnboardArtist[]> {
     if (k && !seen.has(k)) seen.set(k, { name: t.artist, thumbnail: t.cover });
   }
   // Classici sempre presenti (l'onboarding non deve essere solo "chart di oggi")
+  const curated = new Set<string>();
   for (const name of ['Vasco Rossi', 'Ligabue', 'Coldplay', 'Queen', 'Eminem', 'Tiziano Ferro', 'Pink Floyd', 'Rihanna', 'Måneskin', 'Lucio Battisti', 'Daft Punk', 'Adele']) {
     const k = normArtist(name);
+    curated.add(k);
     if (!seen.has(k)) seen.set(k, { name });
   }
-  return [...seen.values()].slice(0, 36);
+  // Le chart infilano canali-compilation e nicchie non-artist (baby-dance):
+  // junkArtist per i canali-uploader (parità col telefono), genere iTunes per
+  // i "children" che i junk-word non coprono (cache persistente, si paga una
+  // volta sola). I classici curati non vanno verificati.
+  const out: OnboardArtist[] = [];
+  for (const [k, a] of seen) {
+    if (junkArtist(a.name)) continue;
+    if (!curated.has(k)) {
+      const g = await itunesArtistGenre(a.name).catch(() => null);
+      if (g && /children|kids|baby|lullab|toddler|nursery/i.test(g)) continue;
+    }
+    out.push(a);
+  }
+  return out.slice(0, 36);
 }
 
 // Semina il profilo: ogni artista scelto pesa come 2 like. I tag Last.fm
@@ -173,7 +209,9 @@ export async function seedTaste(names: string[], u: number): Promise<void> {
     bumpTaste('artist', n, 6, u);
     // Un top brano per artista come "like remoto" no — solo profilo. Ma i tag
     // dell'artista arricchiscono i generi (import dinamico: evita il ciclo).
-    void import('./sources').then((s) => s.lastfmArtistTags(n))
+    // artistGenreTags = cascata Last.fm→iTunes→MusicBrainz: senza chiave il
+    // profilo generi non resta vuoto (e il gate di "Novità" ha di che lavorare).
+    void import('./sources').then((s) => s.artistGenreTags(n))
       .then((tags) => { for (const t of tags.slice(0, 3)) bumpTaste('tag', t, 2, u); })
       .catch(() => {});
   }

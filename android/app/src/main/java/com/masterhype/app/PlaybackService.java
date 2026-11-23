@@ -21,8 +21,11 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.util.Base64;
 
 import androidx.core.content.ContextCompat;
+
+import org.json.JSONObject;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -140,6 +143,14 @@ public class PlaybackService extends Service {
         playing = intent.getBooleanExtra("playing", false);
         lastVideoId = videoId; lastTitle = title; lastArtist = artist;
         lastPlaying = playing; lastPositionMs = positionMs;
+        // Specchio per Android Auto: AutoBrowseService mostra il now-playing
+        // anche quando il renderer è morto (browse a freddo dall'auto).
+        try {
+            AutoCache.saveState(this, new JSONObject()
+                .put("title", title).put("artist", artist).put("album", album)
+                .put("playing", playing).put("durationMs", durationMs)
+                .put("positionMs", positionMs).toString());
+        } catch (Exception ignored) {}
 
         // Contratto startForegroundService: foreground SUBITO (entro ~5s)
         goForeground();
@@ -215,15 +226,25 @@ public class PlaybackService extends Service {
         return b.build();
     }
 
-    // Copertina da URL (LAN http:// del PC o https YouTube): scaricata in
-    // background, poi metadati + notifica si aggiornano col bitmap.
+    // Copertina: scaricata in background, poi metadati + notifica si
+    // aggiornano col bitmap. Due forme di artUrl dal renderer:
+    //   http(s)://…   → URL assoluto del PC (già ?token=) o thumbnail YouTube
+    //   data:…;base64 → copertina sul telefono (blob IndexedDB serializzato)
     private void maybeLoadArt() {
         if (artUrl.equals(artLoaded)) return;
         final String u = artUrl;
         artLoaded = u;
         io.submit(() -> {
             Bitmap bmp = null;
-            if (!u.isEmpty()) {
+            if (u.startsWith("data:")) {
+                final int comma = u.indexOf(',');
+                if (comma > 0) {
+                    try {
+                        byte[] raw = Base64.decode(u.substring(comma + 1), Base64.DEFAULT);
+                        bmp = BitmapFactory.decodeByteArray(raw, 0, raw.length);
+                    } catch (Exception ignored) {}
+                }
+            } else if (!u.isEmpty()) {
                 try {
                     HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
                     c.setConnectTimeout(4000);

@@ -12,7 +12,9 @@ vi.mock('../src/main/services/library', () => ({
 
 import { assistant } from '../src/main/services/recommend';
 
-describe('assistant con prompt libero', () => {
+// Chiamate di rete REALI (Deezer/YouTube): flaky e rate-limitabili, escluse
+// dal vitest run di default. Si eseguono solo con MH_LIVE=1 → `npm run test:live`.
+describe.skipIf(!process.env.MH_LIVE)('assistant con prompt libero', () => {
   it('seed + esclusione + vibe dal testo', async () => {
     const res = await assistant(1, {
       vibe: 'energico', targetMinutes: 0, discoveryPct: 50,

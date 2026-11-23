@@ -8,13 +8,10 @@ import { describe, it, expect } from 'vitest';
 // Prima questo test copiava le regex di produzione "a specchio": ora le
 // funzioni sono in shared/taste.ts — fonte unica PC+telefono. I vettori
 // golden sotto bloccano comunque i comportamenti (niente derive silenziose).
-import { normText as norm, trackBaseKey as baseKey } from '../src/shared/taste';
+import { normText as norm, trackBaseKey as baseKey, artistWeightBlocked, artistBlockedMatch, artistNameContained } from '../src/shared/taste';
 
-const artistBlocked = (blocked: string[], artist: string): boolean => {
-  const a = norm(artist);
-  if (!a) return false;
-  return blocked.some((b) => b.length >= 3 && (a === b || a.includes(b) || b.includes(a)));
-};
+const artistBlocked = (blocked: string[], artist: string): boolean =>
+  blocked.some((b) => artistBlockedMatch(b, artist));
 
 const windowShuffle = <T,>(arr: T[], win = 5): T[] => {
   const sh = <X,>(a: X[]): X[] => {
@@ -61,6 +58,39 @@ describe('v2 — blocco artisti fuzzy', () => {
     expect(artistBlocked(['al'], 'Alanis Morissette')).toBe(false);
   });
   it('artisti diversi passano', () => expect(artistBlocked(blocked, 'Vasco Rossi')).toBe(false));
+  it('MAI sottostringa nuda: confini di parola obbligatori', () => {
+    // i falsi positivi segnalati: sottostringhe dentro nomi diversi
+    expect(artistBlocked(['nas'], 'Anastacia')).toBe(false);
+    expect(artistBlocked(['nas'], 'Jonas Brothers')).toBe(false);
+    expect(artistBlocked(['sanremo'], 'R.E.M.')).toBe(false); // norm "rem" ⊂ "sanremo"
+    expect(artistBlocked(['rem'], 'Sanremo')).toBe(false);
+    expect(artistBlocked(['max pezzali'], 'Max')).toBe(false);
+    // ...ma i match veri restano
+    expect(artistBlocked(['nas'], 'Nas')).toBe(true);
+    expect(artistBlocked(['nas'], 'Nas feat. Damian Marley')).toBe(true);
+    expect(artistBlocked(['max pezzali'], 'Max Pezzali')).toBe(true);
+    expect(artistBlocked(['max pezzali'], 'Max Pezzali & 883')).toBe(true);
+    expect(artistBlocked(['rem'], 'R.E.M.')).toBe(true);
+  });
+  it('artistNameContained (semi/esclusioni): stesse parole, ma "U2" conta', () => {
+    // niente guardia <3: un seme o un "senza X" esplicito su nomi corti va onorato
+    expect(artistNameContained('U2', 'U2')).toBe(true);
+    expect(artistNameContained('U2', 'U2 & Mary J. Blige')).toBe(true);
+    expect(artistNameContained('U2', '2Pac')).toBe(false);
+    expect(artistNameContained('Nas', 'Anastacia')).toBe(false);
+    expect(artistNameContained('Jovanotti', 'Lorenzo Jovanotti')).toBe(true);
+  });
+});
+
+describe('v2 — soglia di blocco artista', () => {
+  it('UNO skip (-1) non blocca: serve un segnale più deciso', () => {
+    expect(artistWeightBlocked(-1)).toBe(false);   // un solo skip
+    expect(artistWeightBlocked(-0.9)).toBe(false); // skip parzialmente decaduto
+    expect(artistWeightBlocked(0)).toBe(false);
+    expect(artistWeightBlocked(-2)).toBe(true);    // hide, o due skip
+    expect(artistWeightBlocked(-3)).toBe(true);    // unlike
+    expect(artistWeightBlocked(-1.5)).toBe(true);  // più negativi sommati
+  });
 });
 
 describe('v2 — ordinamento scalette', () => {
@@ -186,7 +216,7 @@ describe('v2 — chiavi gusti normalizzate (tasteMap)', () => {
   });
   it('un artista bloccato punteggiato blocca davvero', () => {
     const w = tasteMap([{ value: 'p!nk', weight: -3 }]);
-    const blocked = [...w].filter(([, x]) => x < 0).map(([a]) => a);
+    const blocked = [...w].filter(([, x]) => artistWeightBlocked(x)).map(([a]) => a);
     expect(artistBlocked(blocked, 'P!nk')).toBe(true);
     expect(artistBlocked(blocked, 'P!nk feat. X')).toBe(true);
   });
@@ -198,15 +228,16 @@ describe('v2 — chiavi gusti normalizzate (tasteMap)', () => {
 });
 
 describe('v2 — parità offline (offlineRec)', () => {
-  // Specchio di blockedLocal + tasteOrder: artista a peso negativo = bloccato,
-  // match fuzzy su sottostringa (come artistBlocked del PC)
-  const blockedLocal = (blocked: string[], artist: string): boolean => {
-    const a = norm(artist);
-    return !!a && blocked.some((b) => b.length >= 3 && (a === b || a.includes(b) || b.includes(a)));
-  };
-  it('un artista skippato offline non rientra nelle stazioni locali', () => {
+  // Specchio di blockedLocal + tasteOrder: artista a peso < -1 = bloccato,
+  // match a parole intere — stessa funzione condivisa del PC (artistBlockedMatch)
+  const blockedLocal = (blocked: string[], artist: string): boolean =>
+    blocked.some((b) => artistBlockedMatch(b, artist));
+  it('un artista dislikato offline non rientra nelle stazioni locali', () => {
     expect(blockedLocal(['drake'], 'Drake')).toBe(true);
     expect(blockedLocal(['drake'], 'Drake feat. 21 Savage')).toBe(true);
     expect(blockedLocal(['drake'], 'Vasco Rossi')).toBe(false);
+    // stessi falsi positivi eliminati anche a PC spento
+    expect(blockedLocal(['nas'], 'Anastacia')).toBe(false);
+    expect(blockedLocal(['max pezzali'], 'Max')).toBe(false);
   });
 });

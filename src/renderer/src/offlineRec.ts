@@ -2,7 +2,7 @@ import { STATIONS } from '../../shared/types';
 import type { AssistantRequest, AssistantResult, LibraryTrack, RemoteLike, SuggestedTrack, TrackRef, TrendItem } from '../../shared/types';
 import { myUserId, isStandalone } from './remote';
 import { localTaste, mergeTaste, localSkipKeys, trackBaseKey } from './localData';
-import { normText, trackKey, junkTrack } from '../../shared/taste';
+import { normText, trackKey, junkTrack, artistWeightBlocked, artistBlockedMatch, artistNameContained } from '../../shared/taste';
 
 // Approssimazioni locali delle funzioni "taste" che normalmente calcola il PC
 // (suggest, autoplaylist, stazioni, radio, assistente, trends). Con il PC spento
@@ -92,7 +92,8 @@ const ownedVids = (library: LibraryTrack[]) => new Set(library.map((t) => t.vide
 
 // ---- Gusti locali: stessa logica del TasteCtx del PC, fonti offline ----
 // Pesi artista da localTaste (like/play negativi inclusi), artisti "bloccati"
-// con match fuzzy (collaborazioni e alias non aggirano un dislike), brani
+// solo con segnale deciso (artistWeightBlocked: 1 solo skip non basta) e match
+// a parole intere (artistBlockedMatch: "nas" non copre "anastacia"), brani
 // skippati/nascosti su titolo base. Normalizzatori: shared/taste (parità PC).
 
 interface LocalTaste { w: Map<string, number>; max: number; blocked: string[]; neg: Set<string> }
@@ -101,14 +102,12 @@ function tasteSnapshot(): LocalTaste {
   return {
     w: new Map(rows.map((r) => [normText(r.value), r.weight])),
     max: Math.max(1, ...rows.map((r) => Math.max(0, r.weight))),
-    blocked: rows.filter((r) => r.weight < 0).map((r) => normText(r.value)),
+    blocked: rows.filter((r) => artistWeightBlocked(r.weight)).map((r) => normText(r.value)),
     neg: localSkipKeys(),
   };
 }
-const blockedLocal = (t: LocalTaste, artist: string): boolean => {
-  const a = normText(artist);
-  return !!a && t.blocked.some((b) => b.length >= 3 && (a === b || a.includes(b) || b.includes(a)));
-};
+const blockedLocal = (t: LocalTaste, artist: string): boolean =>
+  t.blocked.some((b) => artistBlockedMatch(b, artist));
 
 // Filtra + riordina col gusto locale: i negativi escono, gli artisti amati
 // salgono (il rank della fonte resta un segnale secondario).
@@ -472,10 +471,10 @@ export async function offlineRadio(kind: 'artist' | 'genre', value: string, libr
   // tirava fuori roba generica e artisti sconosciuti).
   if (kind === 'genre') return tasteOrder(await genrePool(value, library)).slice(0, 40);
   const found = await searchPool(value);
-  const v = normText(value);
   // Il seed tiene ~1/3 della scaletta (parità col PC), interlacciato coi
-  // correlati ordinati sui gusti locali.
-  const seed = found.filter((t) => { const a = normText(t.artist ?? ''); return a === v || a.includes(v) || v.includes(a); });
+  // correlati ordinati sui gusti locali. Match a parole intere: una radio
+  // su "Nas" non semina "Anastacia" (era sottostringa nuda).
+  const seed = found.filter((t) => artistNameContained(value, t.artist ?? ''));
   const rest = tasteOrder(dedupe([...(await upNextPool(seed.length ? seed : found, 1)), ...found]))
     .filter((t) => !seed.some((s) => s.videoId === t.videoId));
   const out: TrackRef[] = [];

@@ -1,5 +1,5 @@
 import type { TrackRef, AlbumRef, ArtistRef, PlaylistRef, TopResult, SearchResult } from './types';
-import { normText } from './taste';
+import { normText, cleanTitle } from './taste';
 
 // Parsing difensivo delle risposte InnerTube (YouTube Music). Condiviso tra
 // main (ytmusic.ts) e renderer (direct.ts): gli item cambiano forma tra
@@ -153,7 +153,9 @@ export function toTrack(item: any, source: TrackRef['source'] = 'ytmusic'): Trac
   }
   return {
     videoId: id,
-    title,
+    // Packaging da upload via ("(Official Video)", " - 4K", "Artista - Titolo"):
+    // qui, una sola volta — display, tag MP3 e CD-Text ereditano il titolo pulito.
+    title: cleanTitle(title, artist || undefined),
     artist: artist || 'Sconosciuto',
     album: text(item.album?.name ?? item.album) || albumFromColumns(item),
     durationS: durS(item.duration) ?? durFromColumns(item),

@@ -1,4 +1,4 @@
-import { writeFileSync, readFileSync } from 'fs';
+import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { app, shell } from 'electron';
 import { IPC } from '../shared/types';
@@ -265,6 +265,17 @@ export const handlers: Record<string, Handler> = {
       ? downloader.importFiles(paths, u).then((n) => { if (n) notify(IPC.libraryChanged, null); return n; })
       : Promise.resolve(0),
   [IPC.libraryRecent]: (u: number, limit?: number) => library.recentlyPlayed(limit ?? 10, u),
+  // Copertina come data: URI — per MediaImage.src della Media Session web
+  // (Chromium rifiuta 'media://': solo http/https/data/blob) e per qualunque
+  // consumatore che non può fare una subrequest al protocollo custom.
+  [IPC.libraryCover]: (_u: number, id: number) => {
+    const fp = library.getTrack(Number(id))?.coverPath;
+    if (!fp || !existsSync(fp)) return null;
+    try {
+      const mime = /\.png$/i.test(fp) ? 'image/png' : 'image/jpeg';
+      return `data:${mime};base64,${readFileSync(fp).toString('base64')}`;
+    } catch { return null; }
+  },
   [IPC.libraryLikeRemote]: (u: number, t: TrackRef, liked: boolean) => { library.likeRemote(t, liked, u); notify(IPC.libraryChanged, null); },
   [IPC.libraryRemoteLikes]: (u: number) => library.remoteLikes(u),
   [IPC.libraryRemoteEvent]: (u: number, e: { trackId?: number; artist: string; title?: string; videoId?: string; thumbnail?: string; type: 'play' | 'skip' | 'hide' }) =>
@@ -364,7 +375,7 @@ export const handlers: Record<string, Handler> = {
 
   // Versione e aggiornamenti dell'app desktop. L'install è desktop-only
   // (deny-list in remote.ts: riavvierebbe il server sotto i piedi dei client).
-  [IPC.appInfo]: (): AppInfo => ({ version: app.getVersion(), apk: apkInfoFn(), feed: appUpdate.feedUrl() || undefined }),
+  [IPC.appInfo]: (): AppInfo => ({ version: appUpdate.appVersion(), apk: apkInfoFn(), feed: appUpdate.feedUrl() || undefined }),
   [IPC.appUpdateStatus]: () => appUpdate.appUpdateState(),
   [IPC.appUpdateCheck]: () => appUpdate.checkAppUpdate(true),
   [IPC.appUpdateInstall]: () => appUpdate.installAppUpdate(),

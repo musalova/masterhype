@@ -4,6 +4,7 @@ import { Home, Radio, Search, Library, ListMusic, Disc3, Settings, Check, UserPl
 import { useApp, Screen } from '../store';
 import { api } from '../api';
 import { isStandalone } from '../remote';
+import { pushBack } from '../backStack';
 import Logo from './Logo';
 import type { Playlist } from '../../../shared/types';
 
@@ -177,6 +178,9 @@ export default function Sidebar() {
   // Foglio "Altro" mobile: tutte le funzioni secondarie in sezioni
   const [sheet, setSheet] = useState(false);
   const go = (s: Screen) => { setSheet(false); nav(s); };
+  const me = users.find((x) => x.id === currentUser) ?? users[0];
+  // Tasto indietro Android: il foglio "Altro" si chiude, non esce dalla schermata
+  useEffect(() => (sheet ? pushBack(() => { setSheet(false); return true; }) : undefined), [sheet]);
 
   // Stato dei gruppi espansi (persistito; default = tutti aperti = dashboard)
   const [open, setOpen] = useState<Record<string, boolean>>(() => {
@@ -263,11 +267,12 @@ export default function Sidebar() {
                 </div>
                 <button onClick={() => go('settings')}
                   className="mx-4 mb-2 w-[calc(100%-2rem)] flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-panel2/60 border border-line text-left">
-                  <span className="w-9 h-9 rounded-full bg-gradient-to-br from-fuchsia-600 to-violet-500 flex items-center justify-center text-sm font-bold text-white shrink-0">
-                    {(users.find((x) => x.id === currentUser)?.name ?? users[0]?.name ?? '?')[0].toUpperCase()}
+                  <span className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
+                    style={{ background: me?.color ?? '#2dd4bf' }}>
+                    {(me?.name ?? '?')[0].toUpperCase()}
                   </span>
                   <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium truncate">{users.find((x) => x.id === currentUser)?.name ?? 'Profilo'}</span>
+                    <span className="block text-sm font-medium truncate">{me?.name ?? 'Profilo'}</span>
                     <span className="block text-[11px] text-dim">Profili e impostazioni</span>
                   </span>
                   <ChevronRight size={16} className="text-dim shrink-0" />

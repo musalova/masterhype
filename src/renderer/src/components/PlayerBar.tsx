@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Disc3, Heart, ThumbsDown, Shuffle, Repeat, Repeat1, ListMusic, Radio, Waves, ChevronUp, Loader2 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Disc3, Heart, ThumbsDown, Shuffle, Repeat, Repeat1, ListMusic, Radio, Waves, ChevronUp, Loader2, SlidersHorizontal } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { useApp, notePlaybackPos, pickNextIndex } from '../store';
 import { api, mediaUrl, isRemote } from '../api';
@@ -14,7 +14,9 @@ import { phoneCoverUrl, phoneVidId, phoneInvalidate } from '../phoneLocal';
 import { isOnline } from '../remote';
 import NowPlaying, { prefetchLyrics } from './NowPlaying';
 import QueuePanel from './QueuePanel';
+import EqPanel from './EqPanel';
 import SleepTimer from './SleepTimer';
+import { eqAttach, eqApply, eqArm, eqSrc, eqCanRoute, eqNeedsWrap, EQ_KEY, type EqState } from '../equalizer';
 import { srcOf } from '../playerSrc';
 import type { LibraryTrack, TrackRef } from '../../../shared/types';
 
@@ -49,6 +51,11 @@ export default function PlayerBar() {
   // errori consecutivi — reset quando un brano suona ≥30s — e dopo 3 di
   // fila mettiamo in pausa con un messaggio chiaro invece di continuare.
   const failStreak = useRef(0);
+  // Caricamento fallito DA PAUSATO (coda ripristinata al boot col PC spento,
+  // pausa durante il load): la coda non si auto-avanza e playing non si
+  // accende da solo — il brano resta e un Play esplicito rilancia la pipeline.
+  const loadFailedVid = useRef('');
+  const [retry, setRetry] = useState(0); // ri-innesca l'effetto di caricamento sul Play dopo un load fallito
   const [time, setTime] = useState(0);
   const [dur, setDur] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -93,6 +100,9 @@ export default function PlayerBar() {
   // alcun controllo per riattivarlo. Chiave mh-device-* + tasto sempre
   // visibile su mobile: uno stato muto non può più essere invisibile.
   const [muted, setMuted] = useDeviceState(MUTED_KEY, false);
+  const [eq] = useDeviceState<EqState>(EQ_KEY, { enabled: false, gains: [0, 0, 0, 0, 0] });
+  const [eqOpen, setEqOpen] = useState(false);
+  const [eqOk, setEqOk] = useState(true); // relay disponibile? (APK vecchi senza LocalRelay → EQ impossibile)
   const [queueOpen, setQueueOpen] = useState(false);
   const [npOpen, setNpOpen] = useState(false);
   const cur = player.current;
@@ -104,6 +114,41 @@ export default function PlayerBar() {
   actRef.current = act;
   const el = () => elsRef.current[actRef.current]!;
   const otherEl = () => elsRef.current[1 - actRef.current]!;
+
+  // Equalizzatore: la catena Web Audio si attacca ai due <audio> UNA volta
+  // (il dirottamento è irreversibile). Se il brano in corso era già caricato
+  // da una sorgente esterna "tainted" lo riavvolgo via relay conservando
+  // posizione e stato — altrimenti il grafo lo silenzierebbe all'istante.
+  const rewrapTainted = (a: HTMLAudioElement | null) => {
+    if (!a?.src || !eqNeedsWrap(a.src)) return;
+    const t = a.currentTime;
+    const wasPlaying = !a.paused;
+    void eqSrc(a.src).then((u) => {
+      a.src = u;
+      a.addEventListener('loadedmetadata', () => {
+        a.currentTime = t;
+        if (wasPlaying) void a.play().catch(() => {});
+      }, { once: true });
+    }).catch(() => {});
+  };
+  useEffect(() => {
+    if (!eq.enabled) return;
+    eqArm(); // da ora eqSrc wrappa anche in attesa dell'attach (race col load)
+    let dead = false;
+    void eqCanRoute().then((ok) => {
+      if (dead) return;
+      setEqOk(ok);
+      if (!ok) return;
+      for (const a of elsRef.current) {
+        if (!a) continue;
+        try { eqAttach(a); rewrapTainted(a); } catch { setEqOk(false); }
+      }
+    });
+    return () => { dead = true; };
+  }, [eq.enabled]);
+  // Guadagni: disattivo = catena trasparente (il grafo resta, i filtri a 0dB
+  // non colorano nulla — e gli src continuano a passare dal relay, obbligo).
+  useEffect(() => { eqApply(eq.enabled ? eq.gains : [0, 0, 0, 0, 0]); }, [eq.enabled, eq.gains]);
   // Volume target per un videoId: volume utente × guadagno LUFS misurato (clamp ≤1)
   const targetVol = (vid?: string) =>
     muted ? 0 : Math.min(1, useApp.getState().player.volume * (gainMap.get(vid ?? '') ?? 1));
@@ -156,9 +201,9 @@ export default function PlayerBar() {
     const a = el();
     const o = otherEl();
     o.dataset.vid = nxt.videoId;
-    srcOf(nxt).then((r) => {
+    srcOf(nxt).then(async (r) => {
       if (gen !== xfGen.current || useApp.getState().player.current?.videoId !== fromVid) return;
-      o.src = r.url;
+      o.src = await eqSrc(r.url);
       o.dataset.local = r.local ? '1' : '';
       if (r.videoId !== nxt.videoId) { o.dataset.vid = r.videoId; useApp.getState().healVideoId(nxt.videoId, r.videoId); }
       o.volume = 0;
@@ -209,13 +254,13 @@ export default function PlayerBar() {
       o.dataset.vid = vid;
       manXf.current = gen;
       srcOf(cur)
-        .then((r) => {
+        .then(async (r) => {
           if (gen !== xfGen.current || useApp.getState().player.current?.videoId !== vid) {
             if (manXf.current === gen) manXf.current = -1;
             if (!useApp.getState().player.current) clearLoading();
             return;
           }
-          o.src = r.url;
+          o.src = await eqSrc(r.url);
           o.dataset.local = r.local ? '1' : '';
           if (r.videoId !== vid) o.dataset.vid = r.videoId; // auto-riparato: dataset coerente col nuovo id
           o.volume = 0;
@@ -243,9 +288,16 @@ export default function PlayerBar() {
           if (manXf.current === gen) manXf.current = -1;
           if (useApp.getState().player.current?.videoId !== vid) { if (!useApp.getState().player.current) clearLoading(); return; }
           setLoading(false);
+          if (!useApp.getState().player.playing) { loadFailedVid.current = vid; useApp.getState().toast('Anteprima non disponibile', 'err'); return; }
           if (notePlayFailure()) return;
           useApp.getState().toast('Anteprima non disponibile', 'err');
-          setTimeout(() => { if (useApp.getState().player.current?.videoId === vid) next(); }, 800);
+          setTimeout(() => {
+            const s2 = useApp.getState();
+            if (s2.player.current?.videoId === vid && s2.player.playing) { next(); return; }
+            // Skip annullato da una pausa sul brano fallito: marca il load
+            // così un Play esplicito riprova la pipeline (src morto/vuoto).
+            if (!s2.player.playing && s2.player.current?.videoId === vid) loadFailedVid.current = vid;
+          }, 800);
         });
       return;
     }
@@ -254,9 +306,10 @@ export default function PlayerBar() {
     a.volume = targetVol(vid);
     setLoading(true); setTime(0);
     srcOf(cur)
-      .then((r) => {
+      .then(async (r) => {
         if (useApp.getState().player.current?.videoId !== vid) return; // traccia cambiata nel frattempo
-        a.src = r.url;
+        loadFailedVid.current = '';
+        a.src = await eqSrc(r.url);
         a.dataset.local = r.local ? '1' : '';
         if (r.videoId !== vid) {
           // Stream riparato: dataset sul nuovo id così l'effect (ri-innescato
@@ -267,14 +320,28 @@ export default function PlayerBar() {
           useApp.getState().toast('Stream riparato automaticamente', 'info');
           return;
         }
-        // coda ripristinata all'avvio: carica lo stream ma NON suonare se in pausa
-        if (useApp.getState().player.playing) return a.play();
+        // coda ripristinata all'avvio: carica lo stream ma NON suonare se in pausa.
+        // a.play() NON si restituisce al .then: un suo rifiuto ricadrebbe nel
+        // .catch contando lo STESSO errore due volte (il canale d'errore unico
+        // è l'evento 'error' dell'elemento → onErr/errOrSkip).
+        if (useApp.getState().player.playing) void a.play().catch(() => {});
       })
       .catch(() => {
-        if (useApp.getState().player.current?.videoId !== vid) return;
+        const s = useApp.getState();
+        if (s.player.current?.videoId !== vid) return;
+        // In pausa (coda ripristinata al boot o pausa arrivata durante il
+        // load): MAI auto-avanzare — next() riaccenderebbe playing da solo e
+        // la coda salterebbe a raffica senza un Play dell'utente.
+        if (!s.player.playing) { loadFailedVid.current = vid; s.toast('Anteprima non disponibile', 'err'); return; }
         if (notePlayFailure()) return;
-        useApp.getState().toast('Anteprima non disponibile', 'err');
-        setTimeout(() => { if (useApp.getState().player.current?.videoId === vid) next(); }, 800);
+        s.toast('Anteprima non disponibile', 'err');
+        setTimeout(() => {
+          const s2 = useApp.getState();
+          if (s2.player.current?.videoId === vid && s2.player.playing) { next(); return; }
+          // Skip annullato da una pausa sul brano fallito: marca il load
+          // così un Play esplicito riprova la pipeline (src morto/vuoto).
+          if (!s2.player.playing && s2.player.current?.videoId === vid) loadFailedVid.current = vid;
+        }, 800);
       })
       .finally(() => {
         // Traccia cambiata: lo spinner lo gestisce la run del nuovo brano. Traccia
@@ -282,15 +349,24 @@ export default function PlayerBar() {
         const now = useApp.getState().player.current?.videoId;
         if (now === vid || !now) clearLoading();
       });
-  }, [cur?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cur?.videoId, retry]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const a = el();
     const o = otherEl();
     if (!a) return;
-    if (player.playing) void a.play().catch(() => {});
+    if (player.playing) {
+      // Il load era fallito da pausato: questo Play è il consenso esplicito →
+      // rilancia la pipeline (srcOf → heal → cascata col freno) invece di
+      // chiamare play() su un src mancante o già morto.
+      if (cur && loadFailedVid.current === cur.videoId) {
+        loadFailedVid.current = '';
+        if (a.dataset.vid === cur.videoId) a.dataset.vid = ''; // sblocca la guardia "già caricato" del load
+        setRetry((k) => k + 1);
+      } else void a.play().catch(() => {});
+    }
     else { a.pause(); o?.pause(); } // in pausa si ferma anche il brano in crossfade
-  }, [player.playing]);
+  }, [player.playing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prefetch del brano successivo in coda: lo skip diventa quasi istantaneo.
   // In modalità autonoma (PC giù) il prefetch costa una risoluzione COMPLETA
@@ -340,11 +416,14 @@ export default function PlayerBar() {
     pushMediaSession({
       title: c.title ?? '', artist: c.artist ?? '', album: lib.album || 'MasterHype',
       videoId: c.videoId,
-      // L'artwork la scarica il servizio nativo via HTTP: solo URL http(s),
-      // mai blob: (la copertina IndexedDB non è raggiungibile dal servizio).
-      // Righe "solo telefono" (id sintetico negativo): /media/cover/-id non
-      // esiste sul PC → thumbnail YouTube invece di notifica senza copertina.
+      // L'artwork lo risolve il servizio nativo: solo URL http(s) ASSOLUTI
+      // (gli '/__pc/…' relativi del SW sono convertiti in nativeMedia) o
+      // data: URI — mai blob:. Righe "solo telefono" (id sintetico negativo):
+      // /media/cover/-id non esiste sul PC → thumbnail YouTube.
       artUrl: lib.id && lib.id > 0 ? mediaUrl('cover', lib.id) : c.thumbnail,
+      // …ma se la copertina è scaricata sul telefono vince lei (data: URI):
+      // lockscreen/autoradio coperti anche a PC spento o offline.
+      artPhoneId: (() => { const pid = lib.id && lib.id > 0 ? lib.id : (c.videoId ? phoneVidId(c.videoId) : 0); return pid && useApp.getState().phoneIds.has(pid) ? pid : undefined; })(),
       playing: useApp.getState().player.playing,
       durationMs: Math.round((Number.isFinite(el0?.duration) ? el0!.duration : (c.durationS ?? 0)) * 1000),
       positionMs: Math.round((el0?.currentTime ?? 0) * 1000),
@@ -402,16 +481,27 @@ export default function PlayerBar() {
     if (!('mediaSession' in navigator)) return;
     if (!cur) { navigator.mediaSession.metadata = null; return; } // overlay multimediale pulito a coda finita
     const lib = cur as LibraryTrack;
+    const vid = cur.videoId;
     void (async () => {
       let art: string | undefined;
       if (isRemote() && lib.id && useApp.getState().phoneIds.has(lib.id)) {
         art = (await phoneCoverUrl(lib.id)) ?? undefined; // copertina locale: va anche offline
       }
       art ??= lib.id && lib.id > 0 ? mediaUrl('cover', lib.id) : cur.thumbnail;
+      // MediaImage.src accetta solo http/https/data/blob: su desktop
+      // 'media://cover/<id>' veniva rifiutato da Chromium (errore in console,
+      // overlay multimediale di Windows senza copertina) → il main restituisce
+      // il file come data: URI (fetch('media://') è vietato dal connect-src CSP).
+      if (art?.startsWith('media://cover/')) {
+        const cid = parseInt(art.slice('media://cover/'.length), 10);
+        art = Number.isFinite(cid) ? ((await api().library.coverData(cid).catch(() => null)) ?? undefined) : undefined;
+      }
+      // Cambio brano durante la risoluzione async: non sovrascrivere i metadati nuovi
+      if (useApp.getState().player.current?.videoId !== vid) return;
       navigator.mediaSession.metadata = new MediaMetadata({
         title: cur.title ?? '', artist: cur.artist ?? '',
         album: lib.album || 'MasterHype',
-        artwork: art ? [{ src: art, sizes: '512x512', type: 'image/jpeg' }] : [],
+        artwork: art ? [{ src: art, sizes: '512x512', type: /^data:image\/png/.test(art) ? 'image/png' : 'image/jpeg' }] : [],
       });
     })();
   }, [cur?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -500,11 +590,11 @@ export default function PlayerBar() {
     const pid = (t as LibraryTrack).id ?? (vid ? phoneVidId(vid) : null);
     if (isRemote() && pid != null) phoneInvalidate(pid);
     void api().diag.report('stream-dead', { videoId: vid, artist: t.artist, title: t.title }).catch(() => {});
-    srcOf(t, /*skipPc*/ true).then((r) => {
+    srcOf(t, /*skipPc*/ true).then(async (r) => {
       const st = useApp.getState();
       if (st.player.current?.videoId !== vid) return;
       const a = el();
-      a.src = r.url;
+      a.src = await eqSrc(r.url);
       a.dataset.vid = r.videoId;
       a.dataset.local = r.local ? '1' : '';
       if (st.player.playing) void a.play().catch(() => {});
@@ -533,10 +623,27 @@ export default function PlayerBar() {
 
   const errOrSkip = () => {
     const s = useApp.getState();
+    const vid = s.player.current?.videoId;
+    // In pausa la coda non si muove da sola: un errore sul preload (es. coda
+    // ripristinata col PC spento) marca il brano e basta — un Play esplicito
+    // riproverà, altrimenti next() accenderebbe playing senza consenso.
+    if (!s.player.playing) {
+      if (vid) loadFailedVid.current = vid;
+      s.toast('Anteprima non disponibile', 'err');
+      return;
+    }
     if (notePlayFailure()) return;
     if (s.player.queue.length > 1) {
       s.toast('Errore di riproduzione — passo al brano successivo', 'err');
-      setTimeout(() => useApp.getState().next(), 800);
+      // Ri-controlla playing e vid: una pausa o un cambio brano dell'utente
+      // negli 800ms non deve essere scavalcato dallo skip già programmato
+      // (next → play riaccenderebbe playing da solo). Se la pausa ha fermato
+      // lo skip sul brano fallito, marca il load per il retry al Play.
+      setTimeout(() => {
+        const s2 = useApp.getState();
+        if (s2.player.playing && s2.player.current?.videoId === vid) { s2.next(); return; }
+        if (!s2.player.playing && vid && s2.player.current?.videoId === vid) loadFailedVid.current = vid;
+      }, 800);
     } else {
       s.toast('Errore di riproduzione', 'err');
     }
@@ -733,6 +840,12 @@ export default function PlayerBar() {
           className={`transition-colors max-md:hidden ${queueOpen ? 'text-accent' : 'text-dim hover:text-txt'}`}>
           <ListMusic size={17} />
         </button>
+        {/* EQ visibile anche su mobile: è lì che serve in auto. Su APK vecchi
+            (senza relay nativo) il pannello si apre ma segnala il limite. */}
+        <button onClick={() => setEqOpen((v) => !v)} title="Equalizzatore"
+          className={`transition-colors ${eq.enabled && eqOk ? 'text-accent' : 'text-dim hover:text-txt'}`}>
+          <SlidersHorizontal size={16} />
+        </button>
         {/* Il muto resta visibile ANCHE su mobile: è l'unico stato che può
             azzerare l'audio — se non si vede non si può riattivare. Lo slider
             resta desktop-only: su telefono il cursore è nella vista brano. */}
@@ -752,6 +865,7 @@ export default function PlayerBar() {
 
       <AnimatePresence>
         {queueOpen && <QueuePanel onClose={() => setQueueOpen(false)} />}
+        {eqOpen && <EqPanel onClose={() => setEqOpen(false)} />}
       </AnimatePresence>
       {/* Portal su <body>: il backdrop-blur della barra renderebbe 'fixed' relativo
           alla barra stessa (altezza zero) — il pannello deve coprire la finestra */}

@@ -15,11 +15,18 @@ db.exec(`
 `);
 vi.mock('../src/main/db', () => ({ getDb: () => db }));
 vi.mock('../src/main/settings', () => ({ getSettings: () => ({ country: 'IT' }) }));
-vi.mock('../src/main/services/ytmusic', () => ({ charts: async () => [{ videoId: 'a', title: 'T', artist: 'Chart Artist', thumbnail: 'x' }] }));
+vi.mock('../src/main/services/ytmusic', () => ({ charts: async () => [
+  { videoId: 'a', title: 'T', artist: 'Chart Artist', thumbnail: 'x' },
+  { videoId: 'b', title: 'T2', artist: 'Baby Dance Act', thumbnail: 'x' },
+  { videoId: 'c', title: 'T3', artist: 'Best Hits Uploader', thumbnail: 'x' },
+] }));
 vi.mock('../src/main/services/sources', () => ({
   deezerChart: async () => [{ title: 'D', artist: 'Deezer Artist', rank: 1 }],
   deezerArtistTop: async () => [],
   lastfmArtistTags: async () => ['rock'],
+  artistGenreTags: async () => ['rock'],
+  // iTunes non classifica nessuno tranne la baby-dance (genere "children")
+  itunesArtistGenre: async (a: string) => (a === 'Baby Dance Act' ? "children's music" : null),
 }));
 
 let engine: typeof import('../src/main/services/engine');
@@ -104,6 +111,9 @@ describe('onboarding e uso funzioni', () => {
     expect(names).toContain('Deezer Artist');
     expect(names).toContain('Vasco Rossi');
     expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(names.length);
+    // canali-uploader e baby-dance delle chart NON sono artisti da proporre
+    expect(names).not.toContain('Baby Dance Act');
+    expect(names).not.toContain('Best Hits Uploader');
   });
   it('seedTaste semina il profilo con peso 6 per artista', async () => {
     await engine.seedTaste(['Coldplay', 'Queen'], 5);

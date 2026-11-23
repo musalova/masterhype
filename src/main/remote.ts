@@ -13,10 +13,12 @@ import * as devices from './services/devices';
 import { report } from './services/telemetry';
 import { serveUpdateRoutes } from './update';
 import { sanitizeRemoteSettings, safeUploadName, redactRemoteSettings } from './remoteGuards';
-import { feedUrl } from './services/appUpdate';
+import { feedUrl, appVersion } from './services/appUpdate';
 import { openPairingWindow, pairingOpenLeft, tryPair, mintPairCode, PAIR_CODE_TTL_MS } from './pairing';
 import { startDiscovery, stopDiscovery } from './discovery';
 import { IPC } from '../shared/types';
+import { gsDecode } from '../shared/eqRelay';
+import { Readable } from 'node:stream';
 
 // Server LAN: rende MasterHype disponibile su telefono/tablet nella stessa
 // rete Wi-Fi. Il PC resta la "casa" — yt-dlp, ffmpeg, libreria, gusti e
@@ -28,6 +30,7 @@ import { IPC } from '../shared/types';
 //   GET  /api/info      → handshake pairing
 //   GET  /media/audio/N → file MP3 della libreria (con Range per seek)
 //   GET  /media/cover/N → copertine
+//   GET  /media/gs?u=b64 → relay CORS degli stream per l'equalizzatore Web Audio
 //   GET  /api/prefs     → preferenze condivise ; PUT /api/prefs {k,v}
 //
 // Sicurezza: solo rete locale + token di pairing su ogni richiesta
@@ -261,6 +264,33 @@ function serveMedia(req: IncomingMessage, res: ServerResponse, kind: string, id:
   pipe();
 }
 
+// /media/gs?u=<b64>: relay degli stream esterni per l'equalizzatore Web Audio.
+// Range e status passano intatti (seek); l'abort del client chiude l'upstream.
+async function serveGsRelay(req: IncomingMessage, res: ServerResponse, b64: string): Promise<void> {
+  const target = gsDecode(b64);
+  if (!target) { res.writeHead(403); res.end(); return; }
+  const ac = new AbortController();
+  res.on('close', () => ac.abort());
+  const headers: Record<string, string> = {};
+  if (req.headers.range) headers.range = req.headers.range;
+  if (req.headers['user-agent']) headers['user-agent'] = req.headers['user-agent'];
+  try {
+    const r = await fetch(target, { headers, redirect: 'follow', signal: ac.signal });
+    const h: Record<string, string> = {};
+    for (const k of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+      const v = r.headers.get(k);
+      if (v) h[k] = v;
+    }
+    if (!h['accept-ranges']) h['accept-ranges'] = 'bytes';
+    res.writeHead(r.status, h);
+    if (!r.body) { res.end(); return; }
+    Readable.fromWeb(r.body as Parameters<typeof Readable.fromWeb>[0]).pipe(res);
+  } catch {
+    if (!res.headersSent) res.writeHead(502);
+    res.end();
+  }
+}
+
 // ---- Auto-aggiornamento APK distribuito dal PC ----
 // Il telefono pairato controlla /update/manifest.json: se il PC ha un APK più
 // nuovo lo scarica via LAN e si aggiorna da solo — basta posare l'APK in una
@@ -308,7 +338,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, auth: Auth):
     const port = getSettings().remotePort ?? 48484;
     // updateFeed: il telefono lo memorizza e, lontano dal PC (o in modalità
     // senza PC), continua a ricevere gli aggiornamenti dal feed pubblico.
-    json(res, 200, { name: 'MasterHype', version: app.getVersion(), host: 'pc', alts: altAddresses(port), updateFeed: feedUrl() || undefined });
+    json(res, 200, { name: 'MasterHype', version: appVersion(), host: 'pc', alts: altAddresses(port), updateFeed: feedUrl() || undefined });
     return;
   }
 
@@ -559,6 +589,14 @@ export function startRemoteServer(): void {
         // Il profilo del client SSE decide quali broadcast per-utente riceve
         // (admin → tutti; device non associato → solo quelli senza `u`)
         serveEvents(req, res, auth.admin ? null : (auth.userId ?? -1));
+        return;
+      }
+      // Relay CORS per l'equalizzatore: gli stream googlevideo non mandano
+      // Access-Control-Allow-Origin → MediaElementSource li silenzierebbe.
+      // Allowlist in gsDecode (googlevideo/audius): mai proxy aperto.
+      if (u.pathname === '/media/gs') {
+        if (!authed(req)) { if (authThrottled(req)) { json(res, 429, { e: 'troppi tentativi' }); } else { res.writeHead(401); res.end(); } return; }
+        void serveGsRelay(req, res, u.searchParams.get('u') ?? '');
         return;
       }
       const m = /^\/media\/(audio|cover)\/(\d+)$/.exec(u.pathname);

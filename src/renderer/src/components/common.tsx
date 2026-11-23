@@ -59,8 +59,10 @@ export class RootErrorBoundary extends Component<{ children: ReactNode }, { err:
 
 export function Toasts() {
   const toasts = useApp((s) => s.toasts);
+  // z sopra i bottom-sheet (z-90): un errore deve vedersi anche col foglio
+  // aperto; larghezza limitata su schermi stretti, testo su più righe.
   return (
-    <div className="toast-stack fixed bottom-24 right-4 z-50 space-y-2 w-80" role="status" aria-live="polite">
+    <div className="toast-stack fixed bottom-24 right-4 z-[95] space-y-2 w-80 max-w-[calc(100vw-2rem)]" role="status" aria-live="polite">
       <AnimatePresence>
         {toasts.map((t) => (
           <motion.div key={t.id} initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }}
@@ -68,7 +70,7 @@ export function Toasts() {
             {t.kind === 'ok' && <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />}
             {t.kind === 'err' && <AlertTriangle size={16} className="text-red-400 shrink-0" />}
             {t.kind === 'info' && <Info size={16} className="text-accent2 shrink-0" />}
-            <span className="truncate flex-1">{t.text}</span>
+            <span className="flex-1 min-w-0 break-words line-clamp-3">{t.text}</span>
             {t.action && (
               <button onClick={() => { t.action!.run(); useApp.setState((s) => ({ toasts: s.toasts.filter((x) => x.id !== t.id) })); }}
                 className="text-xs font-bold text-accent hover:underline shrink-0">{t.action.label}</button>

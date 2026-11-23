@@ -4,7 +4,9 @@
 // manuale. Chi modifica un comportamento lo cambia QUI, una volta sola.
 
 // Forma canonica per confronti su artisti/titoli: lowercase, senza diacritici
-// ("Måneskin" = "maneskin"), solo a-z0-9 e spazi ("AC/DC" = "ac dc").
+// ("Måneskin" = "maneskin"), solo a-z0-9 e spazi ("AC/DC" = "acdc").
+// MAI usarla come argomento delle API esterne: "acdc" fallisce i lookup —
+// la forma norm serve solo a chiavi e confronti interni.
 export const normText = (s: string): string => (s ?? '').toLowerCase()
   .normalize('NFD').replace(/[̀-ͯ]/g, '') // combining diacritics U+0300-U+036F
   .replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
@@ -58,6 +60,73 @@ export const listenTasteWeight = (playedS: number, durationS?: number): number =
 
 // Il segnale sull'artista gocciola su tag Last.fm / genere ID3 al 35%.
 export const TAG_SPILL = 0.35;
+
+// Soglia "artista bloccato" nelle scalette: UNO skip (-1) non basta a bandirlo —
+// serve un segnale più deciso (hide -2, unlike -3) o più segnali negativi che si
+// sommano nel tempo. Col decadimento (~90gg per i negativi) il blocco si estingue
+// da solo. Usata da recommend.ts (PC) e offlineRec.ts (telefono): stessa soglia.
+export const artistWeightBlocked = (w: number): boolean => w < -1;
+
+// "Il nome `base` è contenuto in `candidate` a PAROLE INTERE": ogni parola di
+// `base` dev'essere una parola del candidato — "jovanotti" copre "jovanotti
+// feat. x" e "lorenzo jovanotti cherubini", ma "nas" NON copre "anastacia" o
+// "jonas brothers", "sanremo" non copre "r.e.m." ("rem") e "max pezzali" non
+// copre "max" (direzione unica: il nome contenuto, non il contrario).
+export const artistNameContained = (base: string, candidate: string): boolean => {
+  const a = normText(candidate), b = normText(base);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const words = new Set(a.split(' '));
+  return b.split(' ').every((w) => words.has(w));
+};
+
+// Match del BLOCCO gusti: come artistNameContained ma i nomi bloccanti di <3
+// caratteri non bastano (un blocco su 1-2 lettere è prova troppo debole).
+export const artistBlockedMatch = (blocked: string, candidate: string): boolean =>
+  normText(blocked).length >= 3 && artistNameContained(blocked, candidate);
+
+// ---- Pulizia titoli da upload YouTube ----
+// "(Official Video)", "[Lyrics]", " - 4K", " | Official Audio" e il prefisso
+// "Artista - " quando l'artista è già noto: packaging da upload, non titolo.
+// Pulire QUI (fonte unica PC↔telefono) = titolo pulito in display, nomi file,
+// tag MP3 e CD-Text senza toccare nessun consumatore. Le chiavi NON la usano:
+// trackKey/baseTitleOf normalizzano da soli — la pulizia è solo estetica.
+const TITLE_NOISE_WORDS = new Set([
+  'official', 'ufficiale', 'music', 'lyrics', 'lyric', 'lyrical', 'video', 'audio',
+  'visualizer', 'visualiser', 'videoclip', 'clip', 'hd', 'hq', 'uhd', '4k', '8k', 'mv', 'm', 'v', 'vevo',
+  'color', 'colour', 'coded', 'eng', 'sub', 'subs', 'subbed', 'subtitle', 'subtitles',
+  'espanol', 'español', 'esp', 'ita', 'italiano', 'testo', 'traduzione', 'fanmade', 'fan', 'made',
+  'original', 'motion', 'picture', 'soundtrack', 'ost', 'from', 'the', 'of', 'version',
+  'edit', 'explicit', 'clean', 'dirty', 'censored', 'full', 'song', 'track', 'single',
+  'ep', 'prod', 'prod.', 'with', 'lyricvideo', 'audiovideo',
+]);
+// Un gruppo (...) / [...] si elimina SOLO se OGNI parola interna è rumore:
+// "(Official Video)" sparisce, "(feat. X)"/"(Remastered 2011)"/"(Live)" restano.
+const noiseOnly = (s: string): boolean => {
+  const toks = s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+  return toks.length > 0 && toks.every((t) => TITLE_NOISE_WORDS.has(t));
+};
+export const cleanTitle = (title: string, artist?: string): string => {
+  let t = (title ?? '').replace(/\s+/g, ' ').trim();
+  if (!t) return t;
+  // "Artista - Titolo" con artista già noto → solo il titolo ("Sally" non "Vasco Rossi - Sally")
+  if (artist) {
+    const m = /^(.{1,60}?)\s*[-–—]\s+(.+)$/.exec(t);
+    if (m && normText(m[1]) === normText(artist)) t = m[2].trim();
+  }
+  // Parentesi/quadre interamente rumore-video → via; quelle informative restano intatte
+  t = t.replace(/[([]\s*([^()[\]]*)\s*[)\]]/g, (m, inner) => (noiseOnly(String(inner)) ? ' ' : m));
+  // Coda "- Official Video" / "| Lyrics" / "- 4K" (anche ripetuta) — un token
+  // non-rumore nel gruppo coda salva tutto ("Song - Live" non si tocca).
+  let prev: string;
+  do {
+    prev = t;
+    t = t.replace(/\s*[-–—|]\s*((?:[\w.]+[\s,/]*)+)$/, (m, tail) =>
+      noiseOnly(String(tail)) ? '' : m);
+    t = t.replace(/\s{2,}/g, ' ').trim();
+  } while (t !== prev && t.length > 0);
+  return t || (title ?? '').trim(); // mai restituire vuoto: ripiego sul titolo originale
+};
 
 // ---- Filtro "canali-compilation" condiviso PC↔telefono ----
 // Su YouTube metà dei risultati per query tematiche sono upload di canali

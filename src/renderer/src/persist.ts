@@ -18,7 +18,13 @@ export const SHARED_PREF_KEYS: ReadonlySet<string> = new Set(['mh-pref-cdqueue']
 export function loadPref<T>(key: string, fallback: T): T {
   try {
     const s = localStorage.getItem(key);
-    return s != null ? (JSON.parse(s) as T) : fallback;
+    if (s == null) return fallback;
+    // 'null' letterale (chiave corrotta o vecchio savePref(null)) non è un
+    // valore di pref valido: JSON.parse lo restituirebbe e i consumer
+    // crasherebbero leggendo proprietà (mh-pref-player.shuffle → boot rotto)
+    // o peggio (mh-pref-volume → Number(null)=0 → dispositivo muto).
+    const v = JSON.parse(s) as T | null;
+    return v == null ? fallback : v;
   } catch { return fallback; }
 }
 

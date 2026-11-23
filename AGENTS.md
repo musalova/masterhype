@@ -39,8 +39,17 @@
   `mh-seen-version`) e build-android li scrive in `app-update.json` → notes
   (la card di aggiornamento li mostra anche prima di installare)
 - `npx tsc --noEmit` — typecheck
-- `npx vitest run` — test
-- `node scripts/make-icon.mjs` — rigenera TUTTE le icone dal logo sorgente `logo/Gemini_*.jpg`
+- `npx vitest run` — test (TUTTI offline/deterministici: niente fetch reali a
+  YouTube/Deezer/iTunes/MusicBrainz nella suite di default — CI compresa)
+- `npm run test:live` — i test di RETE reali (assistant-live/assistant-prompt):
+  sono gated da `describe.skipIf(!process.env.MH_LIVE)`; lo script imposta
+  `MH_LIVE=1`. Regola: ogni test che tocca rete esterna va dietro lo stesso
+  gate o deve mockare `fetch`/`sources`/`ytmusic` (tutti offline/deterministici: nessuna chiamata di rete)
+- `npm run test:live` — test di rete VERI (Deezer/YouTube Music): sono gated via
+  `describe.skipIf(!MH_LIVE)` nei file `tests/assistant-live|assistant-prompt`,
+  questo script li forza con `MH_LIVE=1`. Flaky/rate-limitabili per natura: mai
+  in CI. `node scripts/test-live.mjs <file>` per un solo file.
+- `node scripts/make-icon.mjs` — rigenera TUTTE le icone dal logo sorgente `logo/masterhype.svg`
   (crop fisso: centro ~1046,1000 lato 1560): `build/icon.ico` multi-size (≤32px crop stretto
   sulle lettere), `resources/icon.png`, `public/icon-192/512.png` (+ copia in assets APK),
   mipmap Android square/round/`ic_launcher_foreground` (disco sfumato 72%, safe zone 66%),
@@ -61,7 +70,7 @@
 - `node scripts/audit-standalone.mjs` — audit CDP modalità senza PC (gate, migrazione :u1)
 - `node scripts/audit-parity.mjs` — audit CDP parità completa (playlist offline, drain
   reale con `MH_PC`/`MH_TOKEN` verso un server di test, backup device, schermate senza PC)
-- `node scripts/tmp/audit-stations-v2.mjs` — audit motore stazioni v2 su user-data-dir
+- `node scripts/audit-stations-v2.mjs` — audit motore stazioni v2 su user-data-dir
   ISOLATO (sicuro mentre l'app installata gira): pertinenza gusti, filtri fuzzy, seed ~30%, rec:next
 
 ## Architettura
@@ -76,6 +85,11 @@
   golden in `tests/taste-parity.test.ts` bloccano derive su entrambi i lati.
   `localData.trackBaseKey`/`engine.normArtist`/`ytparse.normTxt` sono alias di
   compatibilità verso il condiviso.
+  `cleanTitle(title, artist)` è l'UNICO punto di pulizia titoli da upload YT
+  ("(Official Video)", "[Lyrics]", " - 4K", prefisso "Artista - "): applicato
+  in ytparse.toTrack, library.rowToTrack/remoteLikes/recentlyPlayed e
+  recommend.addCand → display, nomi file, tag MP3 e CD-Text ereditano gratis.
+  Le chiavi NON la usano (trackKey/baseTitleOf normalizzano da sé).
 - `src/main/` — processo main Electron: `db.ts` (node:sqlite — schema fresco nel
   blocco CREATE; **migrazioni ordinate via `PRAGMA user_version`**: un passo
   pubblicato in `MIGRATIONS` non si modifica mai, i fix sono passi nuovi in
@@ -90,7 +104,15 @@
   `device:claim` né sporca la lista — un device slegato ma ancora vivo non è
   orfano); VACUUM solo se il pruning ha cancellato righe), `settings.ts`, `ipc.ts`, `services/`
 - `src/main/services/` — `ytmusic.ts` (youtubei.js), `downloader.ts` (yt-dlp+ffmpeg), `library.ts`,
-  `sources.ts` (Deezer/Last.fm/Spotify), `recommend.ts` (scoring+assistente), `trends.ts`, `burner.ts`
+  `sources.ts` (Deezer/Last.fm/Spotify), `recommend.ts` (scoring+assistente), `trends.ts`, `burner.ts`.
+  **Invariante `taste_profile`**: `weight` è il peso "a `updated_at`" — OGNI
+  scrittura (bumpTaste, importBackup) decade prima il peso memorizzato fino a
+  ora via `decayedWeight` (library.ts, UNICA formula: half-life 45gg positivi /
+  90gg negativi) POI somma il delta e ri-ancora `updated_at`. Sommare il delta
+  al grezzo e resettare il ts resuscita al 100% il peso storico non decaduto —
+  bug risolto, NON reintrodurlo (regressione in tests/taste-decay.test.ts).
+  Anche exportBackup scrive i pesi decaduti (vista tasteProfile) e l'import
+  decade il backup per la sua età (`exportedAt`).
 - **Audio non distruttivo**: i download NON cuociono loudnorm/silenceremove nel
   file — `normalizeAudio` misura `input_i` del sorgente e scrive il guadagno nei
   tag `replaygain_track_gain`/`r128_track_gain` + tabella `loudness`; il renderer
@@ -532,8 +554,11 @@
   `usesCleartextTraffic=true` nel manifest (il server LAN è http://). Plugin app-locale
   (non npm): `MediaSessionPlugin` + `PlaybackService` (foreground `mediaPlayback`, wake lock,
   noisy→pause) registrati in `MainActivity.onCreate`. JS: `nativeMedia.ts`
-  (`initNativeMedia` in App.tsx, `pushMediaSession` da PlayerBar — solo URL http(s) per
-  l'artwork, mai blob:) → azioni notifica/lockscreen/BT arrivano come eventi 'action'
+  (`initNativeMedia` in App.tsx, `pushMediaSession` da PlayerBar — l'artwork va al
+  servizio come URL http(s) ASSOLUTO `/media/…?token=` (gli `/__pc/` del SW sono
+  path relativi: `new URL` in Java falliva → niente copertina su lockscreen) o come
+  data: URI dal blob IndexedDB del telefono (`artPhoneId`, decode Base64 in Java,
+  tetto 400KB per il binder; mai blob:) → azioni notifica/lockscreen/BT arrivano come eventi 'action'
   (seek via evento DOM `mh-media-seek`). Senza il servizio Android uccide il processo
   in background e l'audio si ferma — è la parità col tray-resident del PC.
   MAI richiedere audio focus nel servizio: Chromium/WebView lo gestisce già per <audio>
@@ -776,8 +801,12 @@
   mescolate (`windowShuffle`) → ogni apertura/Rigenera propone una scaletta
   diversa senza perdere il ranking.
 - Motore v2 (recommend.ts): `TasteCtx` = UNO snapshot dei gusti per generazione
-  (pesi artista × contesto orario, tag/generi, blocchi fuzzy — "X" blocca anche
-  "X feat. Y", affinità per brano). Pipeline: candidati multi-fonte → scoring
+  (pesi artista × contesto orario, tag/generi, blocchi a PAROLE INTERE — "X"
+  blocca "X feat. Y"/"Lorenzo X" ma MAI sottostringhe: "nas" non copre
+  "anastacia", "max pezzali" non copre "max"; soglia `artistWeightBlocked` =
+  w < -1: UNO skip non blocca, serve hide/unlike o ≥2 segnali negativi —
+  stessa regola in offlineRec, helper condivisi in shared/taste.ts),
+  affinità per brano). Pipeline: candidati multi-fonte → scoring
   → SOLO i top risolvono videoId via `vid_cache` (DB, TTL 14gg / 2gg per le
   negative) → interlaccio round-robin per artista. `stationForYou` ranka i
   simili da co-ascolti + Deezer + Last.fm; `radioForArtist` tiene ~1/3 di seed
@@ -798,6 +827,17 @@
   query YT "<genere> hits" restituiva hit fuori tema. Offline `offlineStation`
   usa `genrePool` (propri brani del genere + upNext + query curata) — semi
   upNext = brani/risultati DEL genere, mai like generici.
+- **Nomi artista: MAI `norm()` come argomento delle API esterne**: `normText`
+  ("AC/DC"→"acdc", "P!nk"→"pnk", "blink-182"→"blink182") serve SOLO a chiavi
+  e confronti interni (pesi, dedup, blocchi) — passata a `lastfmArtistTags`/
+  `lastfmSimilarArtists`/`deezerArtistTop`/`deezerRelatedArtists` fallisce i
+  lookup o trova omonimi. `artistTagsOf` (recommend.ts) prende in INGRESSO i
+  nomi originali e chiava l'output per norm; `artist_cooc`/`taste_profile`
+  sono in forma norm → `artistRawNames(u)` (engine) recupera il nome reale da
+  events/tracks. `deezerSearchArtist` non prende più `data[0]` cieco:
+  `pickDeezerArtist` preferisce match norm esatto, poi substring, a parità
+  `nb_fan` ("Nirvana" non risolve più in "Nirvana (UK)"). Test:
+  `tests/artist-api-names.test.ts`.
 - **Mai 'Sconosciuto' in scaletta**: `addCand` e `stationFilterCtx`
   (recommend.ts) e `tasteOrder` (offlineRec.ts) scartano candidati con artista
   `norm()==='sconosciuto'` — una riga senza artista reale appare rotta.
@@ -816,7 +856,7 @@
 - Audit live: `node scripts/audit-stations.mjs` (13 check CDP: lista, no autoplay,
   play esplicito, radio infinita, back, radio genere), `node scripts/audit-spotify.mjs`
   (17 check: liked-list, mix genere, sidebar, enqueue, sleep timer, tile Sfoglia,
-  radio default ON) e `node scripts/tmp/audit-stations-v2.mjs` (15 check su
+  radio default ON) e `node scripts/audit-stations-v2.mjs` (15 check su
   user-data-dir isolato: pertinenza gusti, blocco fuzzy, seed ~30%, rec:next,
   vid_cache — NON tocca l'istanza installata).
 
@@ -836,7 +876,19 @@
   NowPlaying (la barra lo nasconde su mobile).
 - `player.radio` default ON + persistito in `mh-pref-player` (autoplay Spotify).
   `radioNext` dedup-a e trima la coda (25 brani dietro l'indice).
-- Menu ⋮ universale di TrackRow: coda, radio artista, playlist, CD.
+- Menu ⋮ universale di TrackRow: coda, radio artista, playlist, CD. Su mobile
+  (<768px) la riga mostra SOLO Cuore+⋮ e il menu diventa bottom-sheet con tutte
+  le azioni (CD, download PC/telefono, dislike, sposta, rimuovi) — il titolo
+  ha priorità di spazio. Desktop invariato: icone on-hover + popover ancorato.
+- NowPlaying ha un footer trasporto proprio (seek + minutaggio + Prev/Play/
+  Next): su mobile è l'UNICO scrub preciso (la mini-bar non ha slider) e in
+  fullscreen gli unici comandi. In cinema-idle sparisce col resto della UI.
+- Gate stazioni PC zero-config: i semi 'tag'/'tagtracks' vengono da
+  `tagTopArtists`/`tagTopTracks` in sources.ts — cascata Last.fm (se chiave)
+  → catalogo Deezer per-genere (`/genre` + `/genre/{id}/artists` +
+  `/chart/{id}/tracks`, zero-config). `sceneVeto` distingue junk universale
+  (karaoke/kids/tribute) e scene REGIONALI calibrate su `settings.country`
+  (in India Bollywood è tema, non leak).
 
 ## Player/ricerca — trappole risolte in review critica (non reintrodurle)
 
@@ -863,6 +915,27 @@
 - **Unhandled rejection sweep**: ogni `api().*().then(setX)` vuole il `.catch`
   (a PC morto le call rifiutano); anche nei boundary (diag.report) e nel
   drag&drop import.
+- **Coda in pausa = nessun avanzamento**: gli errori di load (`onErr`,
+  watchdog, `.catch` di `srcOf`) mentre `player.playing` è false NON chiamano
+  `next()` — `next()→play()` accenderebbe `playing` da solo (bug "ghost play":
+  coda ripristinata al boot svuotata a colpi di toast). `errOrSkip` e i catch
+  marcano `loadFailedVid` + un solo toast; un Play esplicito ri-innesca il
+  load via `retry` nell'effect `player.playing`. Gli skip armati a 800ms
+  ri-controllano `playing && videoId` prima di `next()` (una pausa dell'utente
+  nella finestra annulla lo skip e marca il retry). E `a.play()` NON si
+  restituisce al `.then` di `srcOf`: il suo rifiuto ricadrebbe nel `.catch`
+  contando due volte lo stesso errore — il canale unico è l'evento `error`
+  dell'elemento. Audit: `node scripts/audit-ghost-play.mjs` (15 check CDP).
+- **`row-cv` = contain:paint**: `content-visibility:auto` su `.track-row`
+  taglia OGNI figlio che eccede i 60px della riga — anche `position:fixed`
+  (il containment crea il containing block). Il menu ⋮ di TrackRow vive in un
+  `createPortal` su `document.body` ancorato al rect del pulsante (flip in su
+  vicino al bordo basso, overlay z-80 per il click fuori, chiusura su
+  scroll/resize/Esc). MAI riportare dropdown/popover dentro `.row-cv`.
+- **`loadPref` vs 'null' letterale**: `JSON.parse('null')` ritorna null e i
+  consumer crashano (`mh-pref-player.shuffle` → boot rotto) o leggono male
+  (`mh-pref-volume` → `Number(null)`=0 → muto). loadPref ricade sul fallback:
+  una chiave con 'null' NON è un valore valido, non reintrodurre il pass-through.
 
 ## Installer NSIS (build/installer.nsh) — trappole risolte, NON reintrodurle
 
@@ -890,6 +963,11 @@
 
 - Windows, Node 24, ffmpeg su PATH; NO python/dotnet SDK/rust
 - `ELECTRON_RUN_AS_NODE=1` può essere settato dall'IDE → Electron gira come Node: rimuoverlo sempre
+- npm ≥11 blocca i postinstall non approvati (allow-scripts): dopo `npm ci` il
+  binario Electron può mancare (`node_modules/electron/dist` assente) →
+  `node node_modules/electron/install.js`. In CI non serve (electron-vite
+  build non lancia il binario); anche electron/esbuild possono risultare
+  "not yet covered by allowScripts" — warning benigno finché il dev gira.
 - BurnHelper: solo C# 5 (no `=>` membri, no `$""`, no `?.`)
 - Spotify API nuove app: `/recommendations`, `/related-artists`, `/audio-features` vietati → similarità via Last.fm/Deezer
 - Masterizzazione testabile solo con masterizzatore USB collegato

@@ -1,7 +1,7 @@
 // Genera le bitmap NSIS brandizzate MasterHype:
 //   build/installerSidebar.bmp  164x314 (colonna sinistra wizard)
 //   build/installerHeader.bmp   150x57  (header wizard)
-// Sfondo SVG rasterizzato via sharp + logo raster (logo/*.jpg) con angoli
+// Sfondo SVG rasterizzato via sharp + logo raster (logo/masterhype.svg) con angoli
 // arrotondati -> RGBA raw -> BMP 24-bit manuale (sharp non scrive BMP).
 // Uso: node scripts/make-installer-art.mjs
 

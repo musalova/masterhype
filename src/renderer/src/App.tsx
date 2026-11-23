@@ -124,6 +124,9 @@ export default function App() {
     // APK: media session nativa (notifica/lockscreen/BT) + servizio foreground
     // che tiene viva la WebView audio a schermo spento — no-op fuori dall'app
     initNativeMedia();
+    // Android Auto: l'albero sfogliabile va alla cache nativa + il play
+    // pendente (tap a schermo auto mentre l'app era chiusa) si raccoglie qui.
+    void import('./nativeAuto').then((m) => m.initNativeAuto());
     // Aggiornamento APK: check silenzioso a boot assestato (il PC pairato
     // serve l'APK via LAN; sorgente pubblica se configurata) + re-check a
     // ogni riconnessione e ogni 6h di app aperta — un boot partito a PC

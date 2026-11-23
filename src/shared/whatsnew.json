@@ -1,4 +1,15 @@
 {
+  "0.5.17": [
+    "Il menu ⋮ dei brani non finisce più tagliato sotto la riga: sul telefono diventa un foglio comodo con il nome del brano",
+    "Nuova azione \"Riproduci dopo\": metti un brano subito dopo quello in ascolto, senza cambiare il resto della coda",
+    "La copertina arriva finalmente sulla schermata di blocco del telefono, sull'autoradio Bluetooth e nei controlli multimediali di Windows",
+    "MasterHype arriva su Android Auto: stazioni, preferiti e playlist sullo schermo dell'auto",
+    "Nuovo equalizzatore a 5 bande nel lettore, con preset per bassi, voce e auto",
+    "Le stazioni seguono il genere anche senza configurare servizi esterni: niente più canzoni per bambini o artisti fuori tema",
+    "Un brano saltato per caso non esclude più l'artista dalle stazioni: ora serve un segnale chiaro",
+    "Il backup conserva anche i cuoricini sui brani scaricati, e i titoli restano puliti: niente più \"Official Video\" o nomi doppi",
+    "Sul telefono il tasto indietro chiude i fogli e i dettagli aperti, e la schermata del brano ha barra di avanzamento e controlli completi"
+  ],
   "0.5.16": [
     "Le stazioni di genere ora rispettano davvero il tema: nelle stazioni jazz, blues e simili non trovi più i tuoi brani preferiti di altri generi"
   ],

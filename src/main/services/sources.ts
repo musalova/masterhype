@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { getSettings, setSettings } from '../settings';
 import { getDb } from '../db';
+import { normText, normTag } from '../../shared/taste';
 
 // Aggregatore fonti gratuite: Deezer (no key), Last.fm (key gratis), Spotify (credenziali dev).
 // Ogni metodo restituisce [] se la fonte non è configurata/raggiungibile.
@@ -29,12 +30,29 @@ const artistCache = new Map<string, DeezerArtist | null>();
 const topCache = new Map<string, { title: string; artist: string }[]>();
 const relatedCache = new Map<string, string[]>();
 
+// Scelta dell'artista Deezer: data[0] cieco prendeva omonimi/tribute
+// ("Nirvana" → "Nirvana (UK)", la band anni '60). Si preferisce il match sul
+// nome (norm: "AC/DC"↔"acdc"), a parità il più seguito (nb_fan); fallback
+// al primo risultato come prima.
+export function pickDeezerArtist(list: DeezerArtist[], query: string): DeezerArtist | null {
+  const want = normText(query);
+  const score = (a: DeezerArtist): number => {
+    const n = normText(a.name);
+    if (!want || !n) return 0;
+    if (n === want) return 2;
+    if (n.includes(want) || want.includes(n)) return 1;
+    return 0;
+  };
+  return [...list]
+    .sort((x, y) => (score(y) - score(x)) || (y.nb_fan ?? 0) - (x.nb_fan ?? 0))[0] ?? null;
+}
+
 export async function deezerSearchArtist(name: string): Promise<DeezerArtist | null> {
   const k = name.toLowerCase();
   if (artistCache.has(k)) return artistCache.get(k) ?? null;
-  const r = await j<{ data?: DeezerArtist[] }>(`${DEEZER}/search/artist?q=${encodeURIComponent(name)}&limit=3`);
+  const r = await j<{ data?: DeezerArtist[] }>(`${DEEZER}/search/artist?q=${encodeURIComponent(name)}&limit=5`);
   if (r === null) return null; // errore di rete: non cachare, ritenta la prossima volta
-  const a = r.data?.[0] ?? null;
+  const a = pickDeezerArtist(r.data ?? [], name);
   artistCache.set(k, a);
   return a;
 }
@@ -66,6 +84,99 @@ export async function deezerArtistTop(name: string): Promise<{ title: string; ar
   const out = (r?.data ?? []).map((t) => ({ title: t.title, artist: t.artist.name }));
   topCache.set(k, out);
   return out;
+}
+
+// ---- Catalogo per-genere Deezer (zero chiave) ----
+// Senza Last.fm i semi 'tag'/'tagtracks' delle stazioni restavano vuoti: qui
+// /genre dà la mappa id↔nome (cache di sessione), poi /genre/{id}/artists e
+// /chart/{id}/tracks danno i top reali del genere. Copre i generi-umbrella;
+// per tag senza genere Deezer corrispondente (sottogeneri/mood/decenni)
+// restituisce vuoto — il motore ricade su query+upNext come sempre.
+let dzGenresP: Promise<Map<string, number>> | null = null;
+function deezerGenreMap(): Promise<Map<string, number>> {
+  dzGenresP ??= (async () => {
+    const r = await j<{ data?: { id: number; name: string }[] }>(`${DEEZER}/genre`);
+    const m = new Map<string, number>();
+    for (const g of r?.data ?? []) if (g.id > 0) m.set(normTag(g.name), g.id);
+    return m;
+  })();
+  return dzGenresP;
+}
+// Tag nostri → nomi genere Deezer dove normTag da solo non basta
+// ("hip hop"→"Rap/Hip Hop", "lo-fi"→catalogo rap/jazz: Deezer non ha lofi).
+const DEEZER_TAG_ALIAS: Record<string, string[]> = {
+  'hip hop': ['rap hip hop'], rap: ['rap hip hop'], trap: ['rap hip hop'], drill: ['rap hip hop'],
+  'italian hip hop': ['rap hip hop', 'italian pop'], 'italian trap': ['rap hip hop', 'italian pop'],
+  rnb: ['r b', 'soul funk'], soul: ['soul funk', 'r b'], funk: ['soul funk', 'dance'],
+  motown: ['soul funk'], gospel: ['gospel', 'soul funk'],
+  edm: ['dance', 'electro'], electronic: ['electro', 'dance'], techno: ['electro'],
+  house: ['dance'], 'deep house': ['dance', 'electro'], 'minimal techno': ['electro'],
+  'drum and bass': ['electro'], dnb: ['electro'], jungle: ['electro'],
+  synthwave: ['electro', 'pop'], retrowave: ['electro'], synthpop: ['electro', 'pop'],
+  'dance pop': ['dance', 'pop'], electropop: ['electro', 'pop'], club: ['dance'],
+  'k-pop': ['k pop', 'asian music', 'pop'], kpop: ['k pop', 'pop'], 'korean pop': ['k pop'],
+  afrobeats: ['african music', 'pop'], afrobeat: ['african music'], afropop: ['african music'],
+  'bossa nova': ['brazilian music', 'jazz'], samba: ['brazilian music'], mpb: ['brazilian music'],
+  brazilian: ['brazilian music'],
+  italian: ['italian pop', 'pop'], 'italian pop': ['italian pop', 'pop'], 'pop italiano': ['italian pop'],
+  'italian indie': ['indie', 'italian pop'], 'indie pop': ['indie', 'pop'],
+  'singer-songwriter': ['folk', 'pop'], cantautori: ['italian pop', 'folk'],
+  neomelodica: ['italian pop'], napoletana: ['italian pop'],
+  'classic rock': ['rock'], 'hard rock': ['rock', 'metal'], 'heavy metal': ['metal'],
+  'thrash metal': ['metal'], 'alternative rock': ['alternative', 'rock'],
+  'indie rock': ['indie', 'alternative'], indie: ['indie', 'alternative'],
+  'punk rock': ['punk'], 'hardcore punk': ['punk'], 'pop punk': ['punk'], 'skate punk': ['punk'],
+  emo: ['punk', 'alternative'], 'post-hardcore': ['punk'],
+  grunge: ['alternative', 'rock'], 'new wave': ['alternative'], 'post-punk': ['alternative'],
+  'smooth jazz': ['jazz'], bebop: ['jazz'], swing: ['jazz'],
+  'blues rock': ['blues', 'rock'], 'delta blues': ['blues'],
+  americana: ['country', 'folk'], 'country rock': ['country'],
+  dub: ['reggae'], ska: ['reggae'], 'roots reggae': ['reggae'],
+  orchestral: ['classical'], opera: ['classical'], symphony: ['classical'],
+  soundtrack: ['classical'], score: ['classical'], 'film score': ['classical'],
+  reggaeton: ['latin music', 'pop'], latin: ['latin music'], 'latin pop': ['latin music'],
+  'lo-fi': ['rap hip hop', 'jazz'], chillhop: ['rap hip hop', 'jazz'], downtempo: ['electro'],
+  '80s': ['pop'], '90s': ['pop'], '70s': ['pop'], '2000s': ['pop'], '2010s': ['pop'],
+};
+async function deezerGenreId(tag: string): Promise<number | null> {
+  const m = await deezerGenreMap();
+  const t = normTag(tag);
+  if (m.has(t)) return m.get(t)!;
+  for (const alt of DEEZER_TAG_ALIAS[t] ?? []) { const id = m.get(alt); if (id) return id; }
+  for (const [n, id] of m) if (t.length > 2 && n.length > 2 && (t.includes(n) || n.includes(t))) return id;
+  return null;
+}
+interface DzTagCatalog { artists: string[]; tracks: { title: string; artist: string }[] }
+const dzTagCache = new Map<string, DzTagCatalog>();
+export async function deezerTagCatalog(tag: string): Promise<DzTagCatalog> {
+  const k = normTag(tag);
+  const hit = dzTagCache.get(k);
+  if (hit) return hit;
+  const id = await deezerGenreId(tag);
+  const out: DzTagCatalog = { artists: [], tracks: [] };
+  if (id != null) {
+    const [a, tr] = await Promise.all([
+      j<{ data?: DeezerArtist[] }>(`${DEEZER}/genre/${id}/artists?limit=25`),
+      j<{ data?: DeezerTrack[] }>(`${DEEZER}/chart/${id}/tracks?limit=40`),
+    ]);
+    out.artists = (a?.data ?? []).map((x) => x.name).filter(Boolean);
+    out.tracks = (tr?.data ?? []).map((x) => ({ title: x.title, artist: x.artist?.name ?? '' })).filter((x) => x.title && x.artist);
+  }
+  dzTagCache.set(k, out);
+  return out;
+}
+// Top artisti/tracce di un tag di catalogo: Last.fm se la chiave c'è,
+// il catalogo Deezer per-genere altrimenti (o se Last.fm risponde vuoto —
+// stessa copertura zero-config che il gate iTunes/MB già dà ai filtri).
+export async function tagTopArtists(tag: string): Promise<string[]> {
+  const lf = await lastfmTagTopArtists(tag).catch(() => [] as string[]);
+  if (lf.length) return lf;
+  return (await deezerTagCatalog(tag).catch(() => null))?.artists ?? [];
+}
+export async function tagTopTracks(tag: string): Promise<{ title: string; artist: string }[]> {
+  const lf = await lastfmTagTopTracks(tag).catch(() => [] as { title: string; artist: string }[]);
+  if (lf.length) return lf;
+  return (await deezerTagCatalog(tag).catch(() => null))?.tracks ?? [];
 }
 
 // ---------- Last.fm ----------
@@ -340,4 +451,122 @@ export async function spotifyImportTopArtists(): Promise<string[]> {
   const r = await spotifyGet<{ items?: { name: string; genres?: string[] }[] }>(
     '/me/top/artists?limit=30&time_range=medium_term', true);
   return (r?.items ?? []).map((a) => a.name);
+}
+
+// ---------- Generi artista senza chiavi: iTunes Search + MusicBrainz ----------
+// Parità col gate del telefono (offlineRec.itunesGate): sul PC la verifica di
+// genere dipendeva SOLO da Last.fm → senza api_key le stazioni di genere e i
+// mood diventavano query nude (Guns N' Roses in "Italiana", hit Bollywood in
+// "Festa", stock/AI in "Chill/Viaggio", baby-dance in "Novità").
+// I positivi finiscono nella tabella artist_genres (cache lunga, i generi non
+// cambiano); i negativi restano in memoria di sessione — un rate-limit non
+// deve diventare "artista senza genere" per sempre.
+
+const ITG_BLOCK_KEY = 'sys:itunes-blocked';
+const ITG_BLOCK_MS = 10 * 60_000;
+const itgMem = new Map<string, string | null>(); // normArtista → genere (anche negativi, solo sessione)
+let itgQ: Promise<unknown> = Promise.resolve();  // coda seriale: gentilezza verso la Search API
+let itgBlockedUntil = -1;                        // -1 = non ancora letto da prefs
+
+const itgSerialize = <T>(fn: () => Promise<T>): Promise<T> => {
+  const r = itgQ.then(fn);
+  itgQ = r.then(() => undefined, () => undefined);
+  return r;
+};
+
+const itgIsBlocked = (): boolean => {
+  if (itgBlockedUntil < 0) {
+    itgBlockedUntil = Number((getDb().prepare('SELECT v FROM prefs WHERE k=?')
+      .get(ITG_BLOCK_KEY) as { v: string } | undefined)?.v ?? 0);
+  }
+  return Date.now() < itgBlockedUntil;
+};
+
+const itgMarkBlocked = (): void => {
+  itgBlockedUntil = Date.now() + ITG_BLOCK_MS;
+  try {
+    getDb().prepare('INSERT OR REPLACE INTO prefs (k,v) VALUES (?,?)').run(ITG_BLOCK_KEY, String(itgBlockedUntil));
+  } catch { /* breaker solo in memoria */ }
+};
+
+const upsertArtistGenre = (artist: string, patch: { itunes?: string; mb?: string }): void => {
+  try {
+    getDb().prepare(`INSERT INTO artist_genres (artist, itunes, mb, fetched_at) VALUES (?,?,?,?)
+      ON CONFLICT(artist) DO UPDATE SET
+        itunes = COALESCE(excluded.itunes, itunes),
+        mb = COALESCE(excluded.mb, mb),
+        fetched_at = excluded.fetched_at`)
+      .run(artist, patch.itunes ?? null, patch.mb ?? null, Date.now());
+  } catch { /* cache best-effort */ }
+};
+
+// primaryGenreName iTunes — match norm esatto preferito al primo risultato
+// ("Queen" non deve diventare "Queensrÿche"). 4xx = l'IP sta rafficando →
+// breaker persistente 10 min: insistere peggiora e basta (vedi itunesGate).
+export async function itunesArtistGenre(name: string): Promise<string | null> {
+  const a = normText(name);
+  if (!a) return null;
+  if (itgMem.has(a)) return itgMem.get(a) ?? null;
+  const row = getDb().prepare('SELECT itunes FROM artist_genres WHERE artist=?')
+    .get(a) as { itunes: string | null } | undefined;
+  if (row?.itunes) { itgMem.set(a, row.itunes); return row.itunes; }
+  if (itgIsBlocked()) return null;
+  return itgSerialize(async () => {
+    try {
+      const res = await fetch(
+        `https://itunes.apple.com/search?term=${encodeURIComponent(name)}&entity=musicArtist&limit=3`,
+        { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) { itgMarkBlocked(); return null; }
+      const jr = await res.json() as { results?: { artistName?: string; primaryGenreName?: string }[] };
+      const r = jr.results ?? [];
+      const pick = r.find((x) => normText(x.artistName ?? '') === a) ?? r[0];
+      const g = pick?.primaryGenreName ? String(pick.primaryGenreName).toLowerCase() : null;
+      itgMem.set(a, g);
+      if (g) upsertArtistGenre(a, { itunes: g });
+      return g;
+    } catch {
+      return null;
+    } finally {
+      await new Promise((r) => setTimeout(r, 140)); // pacing anti-429 (come il telefono)
+    }
+  });
+}
+
+// Tag MusicBrainz — ~1 req/s imposto dal servizio (coda via attesa), User-Agent
+// obbligatorio: senza risponde 403. Ultima spiaggia per gli artisti che iTunes
+// non classifica — sono quelli il vettore del leak (vedi itunesGate telefono).
+let mbNextAt = 0;
+export async function mbArtistTags(name: string): Promise<string[]> {
+  const a = normText(name);
+  if (!a) return [];
+  const row = getDb().prepare('SELECT mb FROM artist_genres WHERE artist=?')
+    .get(a) as { mb: string | null } | undefined;
+  if (row?.mb) return row.mb.split('|').filter(Boolean);
+  const wait = mbNextAt - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  mbNextAt = Date.now() + 1100;
+  try {
+    const res = await fetch(
+      `https://musicbrainz.org/ws/2/artist/?query=${encodeURIComponent(`artist:"${name}"`)}&fmt=json&limit=1`,
+      { signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'MasterHype/1.0 (github.com/musalova/masterhype)' } });
+    if (!res.ok) return [];
+    const jr = await res.json() as { artists?: { name?: string; tags?: { name?: string }[] }[] };
+    const art = (jr.artists ?? []).find((x) => normText(x.name ?? '') === a) ?? jr.artists?.[0];
+    const tags = (art?.tags ?? []).map((t) => String(t.name ?? '').toLowerCase()).filter(Boolean).slice(0, 8);
+    if (tags.length) upsertArtistGenre(a, { mb: tags.join('|') });
+    return tags;
+  } catch {
+    return [];
+  }
+}
+
+// Tag/genere di un artista dalla migliore fonte disponibile: Last.fm se c'è
+// la chiave, altrimenti iTunes primaryGenre, altrimenti tag MusicBrainz.
+// È ciò che rende il gate di genere indipendente dalla chiave Last.fm.
+export async function artistGenreTags(name: string): Promise<string[]> {
+  const lf = await lastfmArtistTags(name).catch(() => [] as string[]);
+  if (lf.length) return lf;
+  const g = await itunesArtistGenre(name).catch(() => null);
+  if (g) return [g];
+  return mbArtistTags(name).catch(() => [] as string[]);
 }

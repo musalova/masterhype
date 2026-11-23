@@ -1,16 +1,15 @@
 import { getDb } from '../db';
 import { getSettings } from '../settings';
 import { charts } from './ytmusic';
-import { deezerChart, lastfmChart, spotifyNewReleases, lastfmArtistTags } from './sources';
+import { deezerChart, lastfmChart, spotifyNewReleases, artistGenreTags } from './sources';
 import { tasteProfile } from './library';
 import { mapLimit } from './util';
+import { normText as norm, trackKey } from '../../shared/taste';
 import type { TrendItem } from '../../shared/types';
 
 // Trend Radar: scansiona chart multi-fonte, deduplica, marca "nicchia".
 
 const CACHE_MS = 6 * 3600_000;
-
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9àèéìòù ]/gi, '').trim();
 
 export async function getTrends(u: number, refresh = false): Promise<TrendItem[]> {
   const db = getDb();
@@ -41,7 +40,7 @@ export async function scanTrends(u: number): Promise<TrendItem[]> {
   const acc = new Map<string, TrendItem & { ranks: number[] }>();
   const push = (title: string, artist: string, rank: number, source: string, extra?: { videoId?: string; thumbnail?: string }) => {
     if (!title || !artist) return;
-    const k = `${norm(artist)}|${norm(title)}`;
+    const k = trackKey(artist, title);
     const e = acc.get(k);
     if (e) {
       if (!e.sources.includes(source)) e.sources.push(source);
@@ -60,12 +59,14 @@ export async function scanTrends(u: number): Promise<TrendItem[]> {
   if (sp.status === 'fulfilled') sp.value.forEach((t, i) => push(t.title, t.artist, i + 1, 'spotify'));
 
   // Nicchia: compare in una sola fonte OPPURE bassa popolarità ma affine ai gusti
-  const topArtists = new Set(tasteProfile(u, 'artist').slice(0, 10).map((r) => r.value));
+  // (i valori in taste_profile sono lowercase grezzi → il confronto va su norm,
+  // stessa regola di tasteCtx: "AC/DC" salvato e "ac dc" in chart devono pariarsi)
+  const topArtists = new Set(tasteProfile(u, 'artist').slice(0, 10).map((r) => norm(r.value)));
   const items = [...acc.values()];
   await mapLimit(items.slice(0, 60), 6, async (it) => {
     if (it.sources.length === 1 && it.rank > 20) it.niche = true;
     else if (topArtists.has(norm(it.artist))) {
-      const tags = await lastfmArtistTags(it.artist);
+      const tags = await artistGenreTags(it.artist);
       if (!it.sources.includes('ytmusic') || it.rank > 40) it.niche = tags.length > 0;
     }
   });

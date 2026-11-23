@@ -9,6 +9,7 @@ import { CoverImg } from '../components/CoverImg';
 import { SectionTitle, Empty, LoadingState } from '../components/common';
 import type { Playlist, TrackRef, LibraryTrack } from '../../../shared/types';
 import { cachedAuto, cacheAuto, offlineAutoplaylist, cleanTags } from '../offlineRec';
+import { pushBack } from '../backStack';
 
 const KIND_LABEL: Record<Playlist['kind'], string> = {
   'lista': 'Playlist',
@@ -190,9 +191,18 @@ export default function Playlists() {
   // libreria" di Spotify). Con una lista aperta → colonna stretta + dettaglio.
   const showDetail = !!auto || open != null;
 
+  // Tasto indietro Android: un dettaglio aperto (playlist o mix) si chiude
+  // prima di uscire dalla schermata — come il bottone "← Tutte le playlist".
+  useEffect(() => {
+    if (!showDetail) return;
+    return pushBack(() => { setAuto(null); setOpen(null); setRenaming(false); setConfirmDel(false); return true; });
+  }, [showDetail]);
+
   return (
     <div className="p-4 md:p-8 overflow-y-auto h-full flex flex-col md:flex-row gap-6">
-      <div className={`w-full shrink-0 transition-all ${showDetail ? 'md:w-80' : ''}`}>
+      {/* Colonna lista: col dettaglio aperto su mobile si nasconde — la scaletta
+          era ~900px sotto la piega e il tap sulla card sembrava non fare nulla */}
+      <div className={`w-full shrink-0 transition-all ${showDetail ? 'md:w-80 max-md:hidden' : ''}`}>
         {/* ===== Fatte per te: playlist generate dal motore ===== */}
         <SectionTitle title="Fatte per te" sub="Si rigenerano da sole sui tuoi gusti" />
         <div className={`grid gap-2.5 mb-6 ${showDetail ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'}`}>

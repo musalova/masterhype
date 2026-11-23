@@ -12,7 +12,7 @@ const VIBE_WORDS: [RegExp, string][] = [
   [/(festa|party|ballare|dance|discoteca|sabato sera|serat)/i, 'festa'],
   [/(anni ?'?90|novanta|nostalgi)/i, 'anni90'],
   [/(allenamento|palestra|corsa|workout|gym|correre|sport)/i, 'allenamento'],
-  [/(romantic|amore|cena|dwe|cuore|dedic)/i, 'romantico'],
+  [/(romantic|amore|cena|due|cuore|dedic)/i, 'romantico'],
   [/(sera|notte|tramonto|dopo cena|lounge|jazz|aperitivo)/i, 'sera'],
   [/(italian[aoi]|cantautor|nostra|italia)/i, 'italiana'],
   [/(estate|estivo|mare|spiaggia|sole|agosto|vacanz)/i, 'estate'],
@@ -47,11 +47,17 @@ function extractNames(text: string, connectors: RegExp): string[] {
   const m = new RegExp(connectors.source, 'gi');
   let r: RegExpExecArray | null;
   while ((r = m.exec(text))) {
-    // prendi fino a virgola/punto/altro connettore
-    const frag = text.slice(r.index + r[0].length).split(/[,;.!]|(?:\s+(?:ma|per|con|senza|tipo|come|stile|alla|che)\b)/i)[0];
+    // prendi fino a virgola/punto/?/connettore; '!' taglia solo davanti a
+    // spazio che NON apre "e/ed" ("P!nk" è un nome, "Ligabue! e Vasco" è una
+    // lista, "Ligabue! Viva" no) — la ripulitura in coda gestisce "Ligabue!".
+    const frag = text.slice(r.index + r[0].length).split(/[,;.?]|!+(?=\s+(?!e\b|ed\b))|(?:\s+(?:ma|per|con|senza|tipo|come|stile|alla|che)\b)/i)[0];
     for (const part of frag.split(/\s+e\s+|\s*,\s*/i)) {
-      const name = part.trim().replace(/^(l'|il |la |i |gli |le )/i, '');
-      if (name.length >= 2 && name.length <= 40 && /^[a-zàèéìòù' 0-9&.-]+$/i.test(name)) out.push(name.trim());
+      const name = part.trim()
+        .replace(/^(l['’]|il |la |i |gli |le )/i, '')
+        .replace(/^[!?.,;:'’]+|[!?.,;:'’]+$/g, '');
+      // Lettere Unicode (AC/DC, P!nk, Motörhead, Måneskin, Rosalía…), cifre e
+      // la punteggiatura tipica da nome d'artista.
+      if (name.length >= 2 && name.length <= 40 && /^[\p{L}\p{M}\p{N}'’&.\-/+! ]+$/u.test(name)) out.push(name.trim());
     }
   }
   return [...new Set(out)];

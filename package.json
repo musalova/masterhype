@@ -1,6 +1,6 @@
 {
   "name": "masterhype",
-  "version": "0.5.16",
+  "version": "0.5.17",
   "description": "MasterHype - la tua musica, il tuo CD. Ricerca, suggerimenti e masterizzazione.",
   "main": "./out/main/index.js",
   "author": "MasterHype",
@@ -16,6 +16,7 @@
     "build:win": "electron-vite build && electron-builder --win --publish never",
     "release": "node scripts/release.mjs",
     "test": "vitest run",
+    "test:live": "node scripts/test-live.mjs",
     "test:e2e": "node scripts/e2e.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -39,10 +40,10 @@
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.3",
     "bgutils-js": "^4.0.3",
-    "electron": "^38.1.0",
+    "electron": "^45.4.1",
     "electron-builder": "^26.18.0",
     "electron-vite": "^4.0.1",
-    "eslint": "10.13.0",
+    "eslint": "^10.15.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "framer-motion": "^12.23.12",
     "globals": "17.13.0",
@@ -55,9 +56,9 @@
     "sharp": "^0.35.4",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",
-    "typescript-eslint": "8.72.0",
+    "typescript-eslint": "^8.73.0",
     "vite": "^7.1.6",
-    "vitest": "^3.2.4",
+    "vitest": "^5.1.1",
     "zustand": "^5.0.16"
   }
 }

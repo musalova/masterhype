@@ -73,6 +73,34 @@ public class MediaSessionPlugin extends Plugin {
         call.resolve();
     }
 
+    // Porta del relay loopback (LocalRelay) per l'equalizzatore Web Audio:
+    // gli stream googlevideo non mandano ACAO → passano da 127.0.0.1 con
+    // l'header aggiunto qui. 0 = relay non avviabile → EQ non disponibile.
+    @PluginMethod
+    public void relayPort(PluginCall call) {
+        JSObject d = new JSObject();
+        d.put("port", LocalRelay.ensure());
+        call.resolve(d);
+    }
+
+    // ---- Android Auto ----
+    // La WebView spinge l'albero sfogliabile (stazioni/preferiti/playlist):
+    // AutoBrowseService lo serve all'auto anche quando il renderer è morto.
+    @PluginMethod
+    public void updateAutoTree(PluginCall call) {
+        AutoCache.saveTree(getContext(), call.getString("tree", ""));
+        call.resolve();
+    }
+
+    // Play richiesto dall'auto mentre il renderer non c'era: consumato una
+    // volta al boot (AutoBrowseService lo parcheggia in AutoCache.pending).
+    @PluginMethod
+    public void autoPending(PluginCall call) {
+        JSObject d = new JSObject();
+        d.put("mediaId", AutoCache.takePending(getContext()));
+        call.resolve(d);
+    }
+
     // Recupero post-render-crash: il servizio (processo app) conserva l'ultimo
     // stato now-playing anche quando il renderer WebView è morto. Il flag
     // crashed viene dal MainActivity (onRenderProcessGone→recreate) e si
@@ -100,6 +128,17 @@ public class MediaSessionPlugin extends Plugin {
         JSObject d = new JSObject();
         d.put("action", action);
         if (positionMs >= 0) d.put("positionMs", positionMs);
+        p.notifyListeners("action", d);
+    }
+
+    // Variante con mediaId (Android Auto: 'auto-play' → il renderer risolve
+    // mediaId → stazione/preferito/brano di playlist e avvia il play).
+    static void emit(String action, String mediaId) {
+        MediaSessionPlugin p = instance;
+        if (p == null) return;
+        JSObject d = new JSObject();
+        d.put("action", action);
+        if (mediaId != null) d.put("mediaId", mediaId);
         p.notifyListeners("action", d);
     }
 

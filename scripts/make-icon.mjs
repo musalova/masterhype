@@ -1,4 +1,4 @@
-// Genera TUTTI gli asset icona MasterHype dal logo sorgente (logo/Gemini_*.jpg):
+// Genera TUTTI gli asset icona MasterHype dal logo sorgente (logo/masterhype.svg):
 //   build/icon.ico                         — multi-size PNG-embedded (Windows Vista+)
 //   resources/icon.png                     — 256px (tray + icona finestra Electron)
 //   src/renderer/public/icon-{192,512}.png — PWA/manifest (+ favicon via index.html)

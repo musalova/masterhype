@@ -60,6 +60,8 @@ const api = {
     skip: (id: number): Promise<void> => ipcRenderer.invoke(IPC.librarySkip, id),
     importFiles: (paths: string[]): Promise<number> => ipcRenderer.invoke(IPC.libraryImport, paths),
     recent: (limit?: number): Promise<TrackRef[]> => ipcRenderer.invoke(IPC.libraryRecent, limit),
+    // Copertina come data: URI: MediaImage.src della Media Session rifiuta media://
+    coverData: (id: number): Promise<string | null> => ipcRenderer.invoke(IPC.libraryCover, id),
     // like su tracce non scaricate + eventi di ascolto da stream remoto
     likeRemote: (t: TrackRef, liked: boolean): Promise<void> => ipcRenderer.invoke(IPC.libraryLikeRemote, t, liked),
     remoteLikes: (): Promise<RemoteLike[]> => ipcRenderer.invoke(IPC.libraryRemoteLikes),

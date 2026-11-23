@@ -1,8 +1,8 @@
 # MasterHype — Analisi completa del prodotto
 
-**Versione:** 0.5.8 · **Piattaforme:** Windows (Electron, server di casa) + Android/Web (client Capacitor) · **Codebase:** ~30.000 righe TS/TSX + plugin Java + C# · **Stato:** in produzione, auto-aggiornante via GitHub Releases
+**Versione:** 0.5.16 · **Piattaforme:** Windows (Electron, server di casa) + Android/Web (client Capacitor) · **Codebase:** ~30.000 righe TS/TSX + plugin Java + C# · **Stato:** in produzione, auto-aggiornante via GitHub Releases
 
-> Doc aggiornato a ottobre 2026. Per le note operative dettagliate (audit CDP,
+> Doc aggiornato a novembre 2026. Per le note operative dettagliate (audit CDP,
 > pairing, sync offline, trappole risolte) vedere `AGENTS.md`.
 
 ---
@@ -24,7 +24,7 @@ Fa una cosa che nessun mainstream fa più: **ricerca → streaming → download 
 | Main Electron | `src/main/db.ts` | node:sqlite: schema + migrazioni `PRAGMA user_version`, pruning 18 mesi, WAL |
 | | `src/main/remote.ts` | Server HTTP LAN: /api/call (mappa condivisa IPC), /media con Range, SSE per-utente, /pair (unica route senza token), /update/*, upload audio |
 | | `src/main/handlers.ts` | Mappa canale→handler: unica sorgente per IPC desktop e API remota; `u` iniettato dal chiamante |
-| | `src/main/services/` | ytmusic (youtubei.js), downloader (yt-dlp+ffmpeg, auto-riparazione stream, loudness ReplayGain), library, recommend (motore gusti v2: contesto orario, co-occorrenze, affinità decadute), sources (Deezer/Last.fm/Spotify/LRCLIB/Audius), trends, burner (IMAPI2/DAO/CD-Text via BurnHelper.cs), updater (yt-dlp), appUpdate (electron-updater), backup, devices, users, telemetry, engine |
+| | `src/main/services/` | ytmusic (youtubei.js), downloader (yt-dlp+ffmpeg, auto-riparazione stream, loudness ReplayGain), library, recommend (motore gusti v2: contesto orario, co-occorrenze, affinità decadute), sources (Deezer/Last.fm/Spotify/LRCLIB/Audius/iTunes/MusicBrainz), trends, burner (IMAPI2/DAO/CD-Text via BurnHelper.cs), updater (yt-dlp), appUpdate (electron-updater), backup, devices, users, telemetry, engine |
 | | `tools/BurnHelper.cs` | C# 5 su .NET 4: IMAPI2 TAO + DAO via SPTI con CD-Text |
 | Preload | `src/preload/index.ts` | contextBridge `window.masterhype`, tipizzato |
 | Renderer | `src/renderer/src/` | React 19 + Tailwind v4 + zustand: stessa UI per desktop, browser LAN e WebView Android |
@@ -34,7 +34,7 @@ Fa una cosa che nessun mainstream fa più: **ricerca → streaming → download 
 | | `phoneLocal.ts` + `public/sw.js` | Blob su IndexedDB (LRU+quota), service worker: proxy `/__pc/*` col token in header, `/__phone/*` con Range |
 | Shared | `src/shared/` | types.ts (contratti IPC), taste.ts (normalizzatori/pesi UNICI PC↔telefono), ytparse.ts, updateFeed.ts |
 | Android | `android/` | Capacitor 7 + plugin app-locali Java: MediaSession/PlaybackService (foreground), Discovery (UDP), AppUpdate (sha256+firma), Files (SAF) |
-| Test | `tests/` | 227 test vitest: gusti, sync, auth remota, pairing, update, engine |
+| Test | `tests/` | ~430 test vitest, tutti offline/deterministici (i live su YouTube/Deezer sono opt-in via `npm run test:live`): gusti, sync, auth remota, pairing, update, engine |
 
 ## 3. Sicurezza (modello LAN)
 
@@ -56,12 +56,11 @@ Nessun competitor copre l'intera catena. Spotify/YT Music: scoperta+streaming ma
 - **Zona grigia ToS**: il download da YouTube viola i ToS del servizio; rischio di distribuzione.
 - **Solo Windows per il server** (BurnHelper è IMAPI2); il client gira ovunque ci sia una WebView.
 - **Burning non testabile in CI** (serve un drive fisico); audit reali via script CDP/adb manuali.
-- Vulnerabilità dev-deps residue (Electron/vitest versioni dev-only): non nel prodotto finale, fix = bump major da pianificare.
+- Vulnerabilità dev-deps residue: 6 moderate di `minimatch` nella catena `electron-builder` (DoS glob a build-time, nessun fix upstream nella linea 26.x). Produzione a 0.
 
 ## 6. Direzione futura (roadmap motivata)
 
 1. Equalizzatore audio (Web Audio su file locali) — credibile per un'app "car audio".
 2. Portata macOS/Linux del server (BurnHelper dietro interfaccia → `drutil`/`cdrdao`).
-3. Bump major Electron (45) e vitest (5) dopo audit delle breaking changes.
-4. Sorgenti legali extra (Jamendo/FMA oltre ad Audius già integrato).
-5. Sync cloud opzionale del profilo gusti (oggi: backup export/import già presente).
+3. Sorgenti legali extra (Jamendo/FMA oltre ad Audius già integrato).
+4. Sync cloud opzionale del profilo gusti (oggi: backup export/import già presente).

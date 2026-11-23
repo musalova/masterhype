@@ -10,6 +10,7 @@ import { STATIONS } from '../../../shared/types';
 import type { StationDef, TrackRef } from '../../../shared/types';
 import { cachedAuto, cacheAuto, offlineStation, offlineRadio, cleanTags } from '../offlineRec';
 import { pcGone } from '../remote';
+import { pushBack } from '../backStack';
 
 const GROUPS: { id: StationDef['group']; title: string; sub: string }[] = [
   { id: 'per-te', title: 'Fatte per te', sub: 'Cucite sui tuoi gusti: si affinano a ogni ascolto, like e skip' },
@@ -29,8 +30,11 @@ function StationCard({ s, i }: { s: StationDef; i: number }) {
       className={`station-art group relative text-left rounded-xl p-4 overflow-hidden border border-white/10 bg-gradient-to-br ${s.grad}
         poster min-h-[140px] flex flex-col justify-end`}>
       <Radio size={52} className="absolute -top-2 -right-2 text-white/15 rotate-12" />
-      <div className="font-bold text-sm text-white drop-shadow">{s.name}</div>
-      <div className="text-[11px] text-white/75 mt-0.5 leading-snug">{s.desc}</div>
+      {/* pr-12: il bollino "lista" (36px a destra in basso) non copre il testo */}
+      <div className="pr-12">
+        <div className="font-bold text-sm text-white drop-shadow">{s.name}</div>
+        <div className="text-[11px] text-white/75 mt-0.5 leading-snug">{s.desc}</div>
+      </div>
       <div className="absolute right-3 bottom-3 w-9 h-9 rounded-full bg-black/60 backdrop-blur flex items-center justify-center
         opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 max-md:opacity-100 transition-opacity shadow-lg">
         <ListMusic size={15} className="text-white" />
@@ -111,6 +115,9 @@ function StationDetail({ sel }: { sel: StationSel }) {
   };
 
   useEffect(() => { void load(); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tasto indietro Android: torna alla griglia delle stazioni (come "← Stazioni")
+  useEffect(() => pushBack(() => { openStation(null); return true; }), [openStation]);
 
   return (
     <motion.div initial={{ opacity: 0, x: 14 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}
