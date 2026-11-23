@@ -28,8 +28,9 @@
 - `npm run build` / `npm run build:win` — build / installer NSIS
 - `npm run release` — release completa: APK (versionCode +1) → EXE con l'APK
   dentro → `release/feed/` + **publish su GitHub Releases** (repo
-  `musalova/masterhype`, release `vX.Y.Z` con i 5 asset del feed; serve env
-  `GH_TOKEN` = PAT Contents:RW, `GH_REPO` per override; upload asset via curl
+  `musalova/masterhype`, release `vX.Y.Z` con i 5 asset del feed; token usati
+  in cascata — `GH_TOKEN` (PAT Contents:RW) poi fallback automatico sul token
+  OAuth di Git Credential Manager, `GH_REPO` per override; upload asset via curl
   per file >64MB — fetch/undici muore a ~300s su un EXE da 250MB). Il feed pubblico è
   `…/releases/latest/download/` (= `DEFAULT_UPDATE_FEED`, cablato nell'app:
   update out-of-box). `MH_FEED_DIR=<dir>` copia il feed anche altrove (share/mount server)

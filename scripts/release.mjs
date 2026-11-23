@@ -67,14 +67,33 @@ for (const [, name] of files) console.log(`  ${name.padEnd(36)} ${(statSync(join
 console.log(`APK build ${apk.versionCode} (${apk.versionName})`);
 
 // ---- Publish su GitHub Releases (feed pubblico di DEFAULT_UPDATE_FEED) ----
-// GH_TOKEN = PAT (fine-grained, Contents: Read&Write sul repo). La release
-// vX.Y.Z ospita i 5 file del feed come asset: /releases/latest/download/<file>
-// li serve sempre dalla release più recente. Il repo DEVE essere pubblico.
+// GH_TOKEN = PAT (fine-grained, Contents: Read&Write sul repo). In assenza o
+// con scope insufficiente si ripiega sul token OAuth di Git Credential Manager
+// (quello che fa funzionare `git push`: scope `repo` = Contents:RW) — si
+// provano tutti i candidati in ordine, il fallimento di uno non ferma l'altro
+// (una release già creata viene solo ri-aggiornata). La release vX.Y.Z ospita
+// i 5 file del feed come asset: /releases/latest/download/<file> li serve
+// sempre dalla release più recente. Il repo DEVE essere pubblico.
 const GH_REPO = process.env.GH_REPO || 'musalova/masterhype';
+let TOKEN = '';
+// Candidati nell'ordine: GH_TOKEN (PAT dedicata, se serve Contents:RW) poi il
+// token OAuth di Git Credential Manager (quello di `git push`: scope repo =
+// Contents:RW). permissions.push su /repos riflette l'UTENTE, non lo scope del
+// token — quindi si provano davvero tutti, il 403 di uno non ferma l'altro.
+function ghCandidates() {
+  const out = [];
+  if (process.env.GH_TOKEN) out.push(['GH_TOKEN', process.env.GH_TOKEN]);
+  try {
+    const r = spawnSync('git', ['credential', 'fill'], { input: 'protocol=https\nhost=github.com\n\n', encoding: 'utf8' });
+    const t = /^password=(.+)$/m.exec(r.stdout ?? '')?.[1]?.trim();
+    if (t && t !== process.env.GH_TOKEN) out.push(['Git Credential Manager', t]);
+  } catch { /* niente credential helper */ }
+  return out;
+}
 async function gh(path, opts = {}) {
   const res = await fetch(`https://api.github.com/repos/${GH_REPO}${path}`, {
     ...opts,
-    headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, 'X-GitHub-Api-Version': '2022-11-28', ...(opts.headers || {}) },
+    headers: { Authorization: `Bearer ${TOKEN}`, 'X-GitHub-Api-Version': '2022-11-28', ...(opts.headers || {}) },
   });
   if (!res.ok && res.status !== 404) throw new Error(`GitHub ${opts.method ?? 'GET'} ${path}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
   return res;
@@ -107,7 +126,7 @@ async function publishGithub() {
     // a curl: stream da disco, niente timeout, retry nativo.
     if (statSync(src).size > 64 * 1e6) {
       const r = spawnSync('curl', ['-sfS', '--retry', '3', '--retry-all-errors', '-X', 'POST',
-        '-H', `Authorization: Bearer ${process.env.GH_TOKEN}`, '-H', 'Content-Type: application/octet-stream',
+        '-H', `Authorization: Bearer ${TOKEN}`, '-H', 'Content-Type: application/octet-stream',
         '--data-binary', `@${src}`, `${up}?name=${encodeURIComponent(name)}`], { stdio: ['ignore', 'ignore', 'inherit'] });
       if (r.status !== 0) throw new Error(`upload ${name}: curl exit ${r.status}`);
       continue;
@@ -115,7 +134,7 @@ async function publishGithub() {
     const r = await fetch(`${up}?name=${encodeURIComponent(name)}`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.GH_TOKEN}`,
+        Authorization: `Bearer ${TOKEN}`,
         'Content-Type': 'application/octet-stream',
         'Content-Length': String(statSync(src).size),
       },
@@ -125,9 +144,15 @@ async function publishGithub() {
   }
   console.log(`Release pubblicata: https://github.com/${GH_REPO}/releases/tag/${tag}`);
 }
-if (process.env.GH_TOKEN) {
-  try { await publishGithub(); }
-  catch (e) { console.error('\n!! Publish GitHub fallito (il feed locale resta valido):', e.message); }
+const cands = ghCandidates();
+if (cands.length) {
+  let done = false;
+  for (const [label, tok] of cands) {
+    TOKEN = tok;
+    try { await publishGithub(); done = true; break; }
+    catch (e) { console.error(`!! Publish GitHub fallito con ${label}:`, e.message); }
+  }
+  if (!done) console.error('\n!! Publish GitHub fallito con tutti i token — il feed locale resta valido:', join(feed));
 } else {
-  console.log('\nPublish GitHub saltato: imposta GH_TOKEN (PAT Contents:RW) — GH_REPO=' + GH_REPO);
+  console.log('\nPublish GitHub saltato: nessun token (GH_TOKEN o Git Credential Manager) — GH_REPO=' + GH_REPO);
 }
