@@ -142,13 +142,16 @@ export function dismissJob(id: string): boolean {
   const j = jobs.get(id);
   if (!j || !['done', 'error'].includes(j.status)) return false;
   jobs.delete(id);
+  // Tombstone: gli altri dispositivi tolgono il job dalla lista (senza evento
+  // la riga restava stale fino al reload).
+  emit({ ...j, removed: true });
   return true;
 }
 
 export function clearFinished(): number {
   let n = 0;
   for (const [id, j] of jobs) {
-    if (['done', 'error'].includes(j.status)) { jobs.delete(id); n++; }
+    if (['done', 'error'].includes(j.status)) { jobs.delete(id); emit({ ...j, removed: true }); n++; }
   }
   return n;
 }

@@ -111,8 +111,28 @@ function videoIdOf(item: any): string | null {
 }
 
 // item_type che possono suonare; 'unknown' è ammesso solo se ha un videoId
-// (youtubei.js non riconosce il tipo, ma sotto c'è comunque un video riproducibile)
-const PLAYABLE = new Set(['song', 'video', 'episode']);
+// (youtubei.js non riconosce il tipo, ma sotto c'è comunque un video riproducibile).
+// 'episode' escluso: è un episodio podcast (spesso >30min), non un brano —
+// entrava in scaletta e ricerca come "canzone" col titolo dello show.
+const PLAYABLE = new Set(['song', 'video']);
+
+// 'unknown' = renderer non mappato da youtubei.js. Vale solo se è un VIDEO
+// vero: le card "mix"/"radio" autogenerate (endpoint watch-playlist con
+// playlistId RD…/OLAK…/VL…) portano anche loro un videoId — il primo brano —
+// ma NON sono canzoni: entravano in scaletta come "Techno Mix 2025" e facevano
+// sembrare la stazione una lista di compilation. Se l'endpoint porta un
+// playlistId o punta a una pagina playlist, l'item è una raccolta, non un brano.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const isCollectionCard = (item: any): boolean => {
+  const p = item.endpoint?.payload ?? item.play_navigation_endpoint?.payload;
+  if (p?.playlistId) return true;
+  const pageType = String(
+    p?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType
+    ?? item.endpoint?.payload?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType
+    ?? '',
+  );
+  return /PLAYLIST|RADIO/i.test(pageType);
+};
 
 // "Artista - Titolo" nel titolo del video: quando il byline manca del tutto
 // (item senza colonna autore, uploader fan/canale) il titolo porta spesso la
@@ -136,6 +156,7 @@ export function toTrack(item: any, source: TrackRef['source'] = 'ytmusic'): Trac
   const id = videoIdOf(item);
   const type = item.item_type;
   if (type && !PLAYABLE.has(type) && !(type === 'unknown' && id)) return null;
+  if (type === 'unknown' && isCollectionCard(item)) return null;
   let title = text(item.title);
   if (!id || !title) return null;
   const authors = item.artists ?? item.authors ?? [];
@@ -246,10 +267,10 @@ export function collect(res: any, out: { songs: TrackRef[]; albums: AlbumRef[]; 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const item = raw as any;
     const type = item.item_type ?? 'song';
-    if (type === 'song' || type === 'video' || type === 'episode' || type === 'unknown') {
+    if (type === 'song' || type === 'video' || type === 'unknown') {
       // 'unknown' = renderer nuovo non mappato da youtubei.js: riproducibile
-      // solo se porta un videoId (altrimenti toTrack lo scarta da solo)
-      const t = toTrack(item, type === 'song' || type === 'episode' ? 'ytmusic' : 'youtube');
+      // solo se porta un videoId e non è una card raccolta (mix/playlist)
+      const t = toTrack(item, type === 'song' ? 'ytmusic' : 'youtube');
       if (!t) continue;
       const prev = songById.get(t.videoId);
       if (prev) {

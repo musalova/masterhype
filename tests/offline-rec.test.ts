@@ -72,6 +72,24 @@ describe('fallback offline — stazioni', () => {
     const t = await offlineStation('workout', [], []);
     expect(Array.isArray(t)).toBe(true);
   });
+  it('"preferiti" con prev: i già mostrati escono (Rigenera = scaletta nuova)', async () => {
+    // 12 like: prev ne copre 3 → restano solo i 9 freschi (min 8 rispettato)
+    const library = Array.from({ length: 12 }, (_, i) =>
+      lib({ videoId: `v${i}`, title: `Song ${i}`, artist: `Artist ${i}`, liked: true }));
+    const prev = library.slice(0, 3);
+    const out = await offlineStation('preferiti', library, [], prev);
+    const ids = new Set(out.map((x) => x.videoId));
+    expect(out.length).toBe(9);
+    for (const p of prev) expect(ids.has(p.videoId)).toBe(false);
+  });
+  it('"preferiti" con prev che copre quasi tutto: i visti rientrano in coda', async () => {
+    // pool sotto il minimo: meglio una ripetizione che una stazione vuota
+    const library = Array.from({ length: 10 }, (_, i) =>
+      lib({ videoId: `v${i}`, title: `Song ${i}`, artist: `Artist ${i}`, liked: true }));
+    const prev = library.slice(0, 9);
+    const out = await offlineStation('preferiti', library, [], prev);
+    expect(out.length).toBe(10); // fresh 1 < 8 → riammessi i visti
+  });
 });
 
 describe('cache scalette (mh-auto-cache)', () => {

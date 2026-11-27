@@ -145,6 +145,7 @@ export interface DownloadJob {
   error?: string;
   filePath?: string;
   userId?: number; // utente che ha accodato: l'evento "download" alimenta il SUO profilo gusti
+  removed?: boolean; // tombstone dell'evento dl:event: il job è stato eliminato (dismiss/clear) → togliere dalla lista
 }
 
 export interface MhUser {

@@ -121,7 +121,11 @@ export const cleanTitle = (title: string, artist?: string): string => {
   let prev: string;
   do {
     prev = t;
-    t = t.replace(/\s*[-–—|]\s*((?:[\w.]+[\s,/]*)+)$/, (m, tail) =>
+    // ATTENZIONE: qui la coda deve restare un'UNICA classe di caratteri —
+    // `(?:[\w.]+[\s,/]*)+` era backtracking catastrofico: un titolo YT con
+    // una lunga sequenza di token (emoji/unicode in coda) congelava il main
+    // per minuti (ricerche e stazioni appese senza errori).
+    t = t.replace(/\s*[-–—|]\s*([\w.,\s/]+)$/, (m, tail) =>
       noiseOnly(String(tail)) ? '' : m);
     t = t.replace(/\s{2,}/g, ' ').trim();
   } while (t !== prev && t.length > 0);
@@ -160,12 +164,18 @@ export const junkArtist = (artist: string): boolean =>
 // Fuori 'mix' prima di ')' (i remix "(Extended Mix)" sono legittimi),
 // 'the best' (Tina Turner), 'relax' (Frankie Goes to Hollywood), 'sleep'/
 // 'work out'/'love song' singolare (canzoni vere).
-const JUNK_TITLE_RE = /(megamix|nonstop|non-stop|\bplaylist|\bbest of\b|\bgreatest hits\b|\btop \d+|\bvol\.?\s*\d|\bcompilation|\bmedley|\bmashup|\bfull album|\bhits\b|\bclassics\b|\bcollection|\bmost famous\b|\bmasterpieces?\b|\d+\s*(min\b|minutes?\b|hours?\b|h\b)|\||spotify|\bworkout\b|\bgym\b|\bfitness\b|\btraining\b|le più belle|per l'anima|\btribute\b|karaoke|relaxing|relaxation|relaj\w*|\blounge\b|\bchill\b|\blo-?fi\b|\bacoustic guitar\b|slowed|\bsped\b|nightcore|reverb|\b8d\b|bass boosted|oldies|aesthetic|\basmr\b|love songs|\bblues music\b|\bjazz (lounge|music|bar)\b|\bsoul music\b|\bcountry (hits|music)\b|\bparty mix\b|\bdj set\b|\bmixed by\b|\bretrowave\b|\bsynthwave\b|\bphonk\b|\bmix\b(?!\s*\))|\[.*(mix|playlist|compilation|hour|beats|lo-?fi|chill).*\]|motivational|musica per|canzoni italiane)/i;
+const JUNK_TITLE_RE = /(megamix|nonstop|non-stop|\bplaylist|\bbest of\b|\bgreatest hits\b|\btop \d+|\bvol\.?\s*\d|\bcompilation|\bmedley|\bmashup|\bfull album|\bhits\b|\bclassics\b|\bcollection|\bmost famous\b|\bmasterpieces?\b|\d+\s*(min\b|minutes?\b|hours?\b|h\b)|\||spotify|\bworkout\b|\bgym\b|\bfitness\b|\btraining\b|le più belle|per l'anima|\btribute\b|karaoke|relaxing|relaxation|relaj\w*|\blounge\b|\bchill\b|\blo-?fi\b|\bacoustic guitar\b|slowed|\bsped\b|nightcore|reverb|\b8d\b|bass boosted|oldies|aesthetic|\basmr\b|love songs|\bblues music\b|\bjazz (lounge|music|bar)\b|\bsoul music\b|\bcountry (hits|music)\b|\bparty mix\b|\bdj (set|mix)\b|\bcontinuous mix\b|\bminimix\b|\bin the mix\b|\bmixed by\b|\bsetlist\b|\bpodcast\b|\bepisode\b|\blive set\b|\bretrowave\b|\bsynthwave\b|\bphonk\b|\bmix\b(?!\s*\))|\[.*(mix|playlist|compilation|hour|beats|lo-?fi|chill).*\]|motivational|musica per|canzoni italiane)/i;
+// Suffisso "(…)" da compilation/mixtape: la guardia di JUNK_TITLE_RE esenta
+// "(… Mix)" per salvare i remix legit "(Extended/Club/Radio/VIP/Dub/Original
+// Mix)" — ma "(Rave Techno Mix)", "(DJ Mix)", "(Continuous Mix)", "(Festival
+// Mix)", "(Bootleg)" sono upload da canale, non versioni release. Lista stretta
+// sui descrittori che i suffissi ufficiali non usano ("(Festival Remix)" resta).
+const JUNK_TITLE_PAREN = /[([][^)\]]*\b(rave|continuous|dj ?(set|mix)|in the mix|live (mix|set)|hour mix|minimix|festival (mix|anthem)|bootleg)\b[^)\]]*[)\]]/i;
 // Emoji nel titolo = upload YouTube, non metadato di canzone (regex a parte:
 // la classe \u{…} esige il flag /u).
 const JUNK_TITLE_FANCY = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
 // Oltre ~13 min non è quasi mai una canzone: i megamix vanno 30min-3h.
 const JUNK_MAX_S = 800;
-export const junkTitle = (title: string): boolean => !!title && (JUNK_TITLE_RE.test(title) || JUNK_TITLE_FANCY.test(title));
+export const junkTitle = (title: string): boolean => !!title && (JUNK_TITLE_RE.test(title) || JUNK_TITLE_PAREN.test(title) || JUNK_TITLE_FANCY.test(title));
 export const junkTrack = (artist: string, title: string, durationS?: number): boolean =>
   junkArtist(artist) || junkTitle(title) || (durationS != null && durationS > JUNK_MAX_S);

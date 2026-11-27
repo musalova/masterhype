@@ -11,12 +11,28 @@ let ytCountry = '';
 export async function getClient(): Promise<Innertube> {
   const country = getSettings().country || 'IT';
   if (!yt || ytCountry !== country) {
+    const t0 = Date.now();
+    try {
     yt = await Innertube.create({
       cache: new UniversalCache(false),
       retrieve_player: false,
       location: country,
       lang: 'it',
+      // Deadline su OGNI richiesta Innertube: sotto throttling YT una singola
+      // search/getUpNext pendeva minuti e bloccava intere pipeline (radio,
+      // stazioni). 15s e si fallisce come errore — i caller hanno i loro catch.
+      fetch: (input, init) => fetch(input as string, {
+        ...(init as RequestInit),
+        signal: init?.signal
+          ? AbortSignal.any([init.signal, AbortSignal.timeout(15000)])
+          : AbortSignal.timeout(15000),
+      }),
     });
+    } catch (e) {
+      if (process.env.MH_AUDIT_TAGS) console.log(`[yt] Innertube.create ERR ${((Date.now() - t0) / 1000).toFixed(1)}s ${String(e).slice(0, 120)}`);
+      throw e;
+    }
+    if (process.env.MH_AUDIT_TAGS) console.log(`[yt] Innertube.create ok ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     ytCountry = country;
   }
   return yt;

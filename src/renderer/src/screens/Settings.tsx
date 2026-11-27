@@ -703,7 +703,9 @@ export default function Settings() {
     return () => clearInterval(iv);
   }, [mintQr]);
 
-  const loadRemote = () => void api().remote.info().then(setRemoteInfo).catch(() => setRemoteInfo(null));
+  // remote:info è admin-only (serve al QR del PC): dal telefono il device
+  // token riceve solo 403 — la chiamata si salta del tutto.
+  const loadRemote = () => { if (!isRemote()) void api().remote.info().then(setRemoteInfo).catch(() => setRemoteInfo(null)); };
 
   useEffect(() => {
     if (settings) setS(settings);

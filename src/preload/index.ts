@@ -101,10 +101,10 @@ const api = {
   rec: {
     suggest: (): Promise<SuggestedTrack[]> => ipcRenderer.invoke(IPC.recommend),
     assistant: (req: AssistantRequest): Promise<AssistantResult> => ipcRenderer.invoke(IPC.assistant, req),
-    station: (id: string): Promise<TrackRef[]> => ipcRenderer.invoke(IPC.station, id),
-    radio: (kind: 'artist' | 'genre', value: string): Promise<TrackRef[]> => ipcRenderer.invoke(IPC.radio, kind, value),
+    station: (id: string, prev?: TrackRef[]): Promise<TrackRef[]> => ipcRenderer.invoke(IPC.station, id, prev),
+    radio: (kind: 'artist' | 'genre', value: string, prev?: TrackRef[]): Promise<TrackRef[]> => ipcRenderer.invoke(IPC.radio, kind, value, prev),
     next: (videoId: string, artist: string, ctx?: string): Promise<TrackRef[]> => ipcRenderer.invoke(IPC.stationNext, videoId, artist, ctx),
-    autoplaylist: (id: string): Promise<TrackRef[]> => ipcRenderer.invoke(IPC.autoplaylist, id),
+    autoplaylist: (id: string, prev?: TrackRef[]): Promise<TrackRef[]> => ipcRenderer.invoke(IPC.autoplaylist, id, prev),
     onboard: (): Promise<OnboardArtist[]> => ipcRenderer.invoke(IPC.recOnboard),
     trends: (): Promise<TrendItem[]> => ipcRenderer.invoke(IPC.trends),
     trendsRefresh: (): Promise<TrendItem[]> => ipcRenderer.invoke(IPC.trendsRefresh),

@@ -419,7 +419,7 @@ export async function offlineSuggest(library: LibraryTrack[], remoteLikes: Remot
 }
 
 // ---- autoplaylist ----
-export async function offlineAutoplaylist(id: string, library: LibraryTrack[], remoteLikes: RemoteLike[]): Promise<TrackRef[]> {
+export async function offlineAutoplaylist(id: string, library: LibraryTrack[], remoteLikes: RemoteLike[], prev?: TrackRef[]): Promise<TrackRef[]> {
   const likes = likedTracks(library, remoteLikes);
   const top = [...library].sort((a, b) => b.playCount - a.playCount).map(toRef);
   const owned = ownedVids(library);
@@ -438,16 +438,29 @@ export async function offlineAutoplaylist(id: string, library: LibraryTrack[], r
   else if (id === 'scoperte' || id === 'nuove') list = tasteOrder(await fresh(true));
   else if (id.startsWith('genre:')) list = tasteOrder(await genrePool(id.slice(6), library));
   else if (id.startsWith('artist:')) list = tasteOrder(dedupe([...await searchPool(id.slice(7)), ...await upNextPool(likes, 1)]));
-  return dedupe(list).slice(0, 50);
+  return dropPrev(dedupe(list), prev, 10).slice(0, 50);
 }
 
 // ---- stazioni / radio ----
-export async function offlineStation(id: string, library: LibraryTrack[], remoteLikes: RemoteLike[]): Promise<TrackRef[]> {
+// "Rigenera" a PC spento: stessa semantica del PC — la scaletta corrente
+// esce dal pool, i titoli freschi prendono i suoi slot. Fallback: se il pool
+// locale non ha abbastanza novità si riammettono i già visti in coda.
+function dropPrev<T extends { videoId?: string; artist: string; title: string }>(list: T[], prev?: TrackRef[], min = 8): T[] {
+  if (!prev?.length) return list;
+  const vids = new Set(prev.map((t) => t.videoId).filter(Boolean));
+  const keys = new Set(prev.map((t) => trackBaseKey(t.artist, t.title)).filter(Boolean));
+  const seen: T[] = [];
+  const fresh = list.filter((t) =>
+    (t.videoId && vids.has(t.videoId)) || keys.has(trackBaseKey(t.artist, t.title)) ? (seen.push(t), false) : true);
+  return fresh.length >= min ? fresh : [...fresh, ...seen];
+}
+
+export async function offlineStation(id: string, library: LibraryTrack[], remoteLikes: RemoteLike[], prev?: TrackRef[]): Promise<TrackRef[]> {
   const def = STATIONS.find((s) => s.id === id);
   // Stazione di genere: i tuoi brani di quel genere + correlati + catalogo,
   // non solo la query nuda (parità col seed Last.fm del PC).
-  if (def?.genre) return tasteOrder(await genrePool(def.genre, library, def.query)).slice(0, 40);
-  if (def?.query) return tasteOrder(await searchPool(def.query)).slice(0, 40);
+  if (def?.genre) return dropPrev(tasteOrder(await genrePool(def.genre, library, def.query)), prev).slice(0, 40);
+  if (def?.query) return dropPrev(tasteOrder(await searchPool(def.query)), prev).slice(0, 40);
 
   // stazioni personali: equivalenti locali
   const likes = likedTracks(library, remoteLikes);
@@ -463,13 +476,13 @@ export async function offlineStation(id: string, library: LibraryTrack[], remote
   }
   // Il filtro/ordine sui gusti locali replica il TasteCtx del PC:
   // artisti dislikati fuori, brani skippati fuori, artisti amati in testa.
-  return tasteOrder(list).slice(0, 40);
+  return dropPrev(tasteOrder(list), prev).slice(0, 40);
 }
 
-export async function offlineRadio(kind: 'artist' | 'genre', value: string, library: LibraryTrack[] = []): Promise<TrackRef[]> {
+export async function offlineRadio(kind: 'artist' | 'genre', value: string, library: LibraryTrack[] = [], prev?: TrackRef[]): Promise<TrackRef[]> {
   // Genere: i semi sono i TUOI brani di quel genere (era "${genre} hits" nudo —
   // tirava fuori roba generica e artisti sconosciuti).
-  if (kind === 'genre') return tasteOrder(await genrePool(value, library)).slice(0, 40);
+  if (kind === 'genre') return dropPrev(tasteOrder(await genrePool(value, library)), prev).slice(0, 40);
   const found = await searchPool(value);
   // Il seed tiene ~1/3 della scaletta (parità col PC), interlacciato coi
   // correlati ordinati sui gusti locali. Match a parole intere: una radio
@@ -485,7 +498,7 @@ export async function offlineRadio(kind: 'artist' | 'genre', value: string, libr
     else if (seed.length) out.push(seed.shift()!);
     else break;
   }
-  return dedupe(out);
+  return dropPrev(dedupe(out), prev);
 }
 
 // Continuazione radio col PC spento: upNext diretto filtrato sui gusti

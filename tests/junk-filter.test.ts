@@ -39,6 +39,23 @@ describe('junkTitle — compilation/megamix riconosciuti', () => {
   for (const t of junk) it(t, () => expect(junkTitle(t)).toBe(true));
 });
 
+describe('junkTitle — suffissi "(…)" da compilation/mixtape', () => {
+  // Leak reali dalla stazione "techno": la guardia "(Extended Mix) ok"
+  // lasciava passare anche i suffissi da upload da canale.
+  const junk = ['Techno Nun 3 (Rave Techno Mix)', 'Energy Flow (DJ Mix)',
+    'Warehouse (Continuous Mix)', 'Main Stage (Festival Mix)', 'Deep Cut (Bootleg)',
+    'Anthem (Live Set)', 'Intro (In The Mix)', 'Night Drive (Minimix)', 'Setlist Part 1',
+    'The Podcast Ep. 12', 'Live Set 2025'];
+  for (const t of junk) it(t, () => expect(junkTitle(t)).toBe(true));
+});
+
+describe('junkTitle — suffissi release legittimi NON toccati', () => {
+  const real = ['Song (Extended Mix)', 'Track (Club Mix)', 'Hit (Festival Remix)',
+    'Bassline (Dub Mix)', 'Original (Radio Mix)', 'Move (VIP Mix)', 'Night (Remix)',
+    'After Hours', 'Song (After Hours Remix)', 'Rave', 'Carnival (Festival Edit)'];
+  for (const t of real) it(t, () => expect(junkTitle(t)).toBe(false));
+});
+
 describe('junkTitle — titoli veri NON toccati', () => {
   const real = ['Relax', 'The Best', 'Uptown Funk', 'Good Vibes', 'Love Song', 'September',
     'Take Five', 'Sweet Dreams (Are Made of This)', 'A Bar Song (Tipsy)',

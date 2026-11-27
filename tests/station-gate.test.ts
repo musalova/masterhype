@@ -26,6 +26,24 @@ const MB: Record<string, string[]> = {
   'vasco rossi': ['italian', 'pop', 'singer-songwriter', 'rock'],
 };
 
+// Generi PRIMARI iTunes (verdetto autorevole del gate genre): Vasco è 'Rock'
+// di primario — lo salva solo la prova specifica ('italian' via MB), non la
+// nuvola. I leak reali (GnR/Bollywood) hanno primario fuori tema → hardOut.
+const PRIMARY: Record<string, string> = {
+  'guns n roses': 'Rock',
+  'arijit singh': 'Bollywood',
+  'vasco rossi': 'Rock',
+  'dua lipa': 'Pop',
+  'calvin harris': 'Dance',
+  'bruno mars': 'Pop',
+  'the weeknd': 'R&B',
+  'laura pausini': 'Pop',
+  'tiziano ferro': 'Pop',
+  'elisa': 'Pop',
+  'jovanotti': 'Pop',
+  'gemelli diversi': 'Pop',
+};
+
 vi.mock('../src/main/db', () => ({ getDb: () => ({ prepare: () => ({ get: () => undefined, all: () => [], run: () => ({}) }) }) }));
 vi.mock('../src/main/settings', () => ({ getSettings: () => ({ country: 'IT', lastfmApiKey: '', spotifyClientId: '', spotifyClientSecret: '' }) }));
 vi.mock('../src/main/services/library', () => ({
@@ -71,6 +89,7 @@ vi.mock('../src/main/services/sources', () => ({
   // La cascata senza chiave risponde con genere iTunes/MB verificato.
   artistGenreTags: async (a: string) => GENRES[a.toLowerCase()] ?? [],
   mbArtistTags: async (a: string) => MB[a.toLowerCase()] ?? [],
+  itunesArtistGenre: async (a: string) => PRIMARY[a.toLowerCase()] ?? null,
 }));
 
 import { stationTracks } from '../src/main/services/recommend';

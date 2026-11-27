@@ -52,3 +52,51 @@ describe('toTrack — recupero artista', () => {
     expect(toTrack({ ...base, title: 'Daft Punk — Get Lucky' })?.artist).toBe('Daft Punk');
   });
 });
+
+describe('toTrack — card raccolta e podcast NON sono canzoni', () => {
+  // Le card "mix"/"radio" di YT Music (endpoint watch-playlist RD…/OLAK…)
+  // portano un videoId ma sono raccolte: entravano in scaletta come
+  // "Techno Mix 2025" fingendosi brani. item_type 'unknown' + playlistId → fuori.
+  it('una card watch-playlist (unknown + playlistId) è scartata', () => {
+    const t = toTrack({
+      item_type: 'unknown', title: 'Techno Mix 2025',
+      endpoint: { payload: { videoId: 'abcdefghijk', playlistId: 'RDCLAK5uy_abc' } },
+    });
+    expect(t).toBeNull();
+  });
+  it('una card playlist-page (unknown + pageType PLAYLIST) è scartata', () => {
+    const t = toTrack({
+      item_type: 'unknown', title: 'Best Techno',
+      endpoint: {
+        payload: {
+          videoId: 'abcdefghijk',
+          browseEndpointContextSupportedConfigs: {
+            browseEndpointContextMusicConfig: { pageType: 'MUSIC_PAGE_TYPE_PLAYLIST' },
+          },
+        },
+      },
+    });
+    expect(t).toBeNull();
+  });
+  it('un video "unknown" SENZA playlistId resta riproducibile', () => {
+    const t = toTrack({
+      item_type: 'unknown', title: 'A real song', artists: [{ name: 'Real Artist' }],
+      endpoint: { payload: { videoId: 'abcdefghijk' } },
+    });
+    expect(t?.videoId).toBe('abcdefghijk');
+  });
+  it('una riga di playlist (song + playlistId di contesto) resta valida', () => {
+    const t = toTrack({
+      item_type: 'song', title: 'Song inside a playlist', artists: [{ name: 'Artist' }],
+      endpoint: { payload: { videoId: 'abcdefghijk', playlistId: 'PLxxxx' } },
+    });
+    expect(t?.videoId).toBe('abcdefghijk');
+  });
+  it('un episodio podcast non è un brano', () => {
+    const t = toTrack({
+      item_type: 'episode', title: 'Ep. 42 — Intervista', authors: [{ name: 'Show' }],
+      endpoint: { payload: { videoId: 'abcdefghijk' } },
+    });
+    expect(t).toBeNull();
+  });
+});

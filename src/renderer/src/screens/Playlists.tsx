@@ -64,6 +64,13 @@ export default function Playlists() {
   const plSel = useApp((s) => s.plSel);
   useEffect(() => {
     void load();
+    // Playlist mutate dall'altro dispositivo (telefono↔PC): la lista si
+    // aggiorna da sola via lib:changed (debounced — niente fetch a raffica).
+    let plT: ReturnType<typeof setTimeout> | undefined;
+    const offLib = api().library.onChanged(() => {
+      clearTimeout(plT);
+      plT = setTimeout(() => void load(), 500);
+    });
     // "Mix <artista>" + "Mix <genere>" dai top del profilo gusti
     void api().library.taste('artist').then((r) => {
       setTopArtists(r.filter((x) => x.weight > 0.5).slice(0, 2).map((x) => x.value));
@@ -83,6 +90,7 @@ export default function Playlists() {
       for (const t of lib) if (t.genre) count.set(t.genre, (count.get(t.genre) ?? 0) + 1 + (t.liked ? 2 : 0));
       setTopTags(cleanTags([...count.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g)).slice(0, 4));
     });
+    return offLib;
   }, []);
   // Deep-link dalla Home/sidebar: quick-tile → lista autogenerata, voce → playlist utente
   useEffect(() => {
@@ -112,12 +120,15 @@ export default function Playlists() {
     }
   };
 
-  // Apre una playlist autogenerata: tracce calcolate al volo dal motore
-  const openAuto = async (id: string, name: string, desc: string) => {
+  // Apre una playlist autogenerata: tracce calcolate al volo dal motore.
+  // `regen` = "Rigenera": passa la lista corrente — il PC la esclude e porta
+  // brani freschi (prima tornava la stessa rimescolata).
+  const openAuto = async (id: string, name: string, desc: string, regen = false) => {
     setOpen(null); setAutoLoading(true);
-    setAuto({ id, name, desc, tracks: [] });
+    const prev = regen ? auto?.tracks : undefined;
+    if (!regen) setAuto({ id, name, desc, tracks: [] });
     try {
-      const tracks = await api().rec.autoplaylist(id);
+      const tracks = await api().rec.autoplaylist(id, prev);
       setAuto({ id, name, desc, tracks });
       if (tracks.length) cacheAuto(`pl:${id}`, tracks);
       else toast('Nessun brano trovato — ascolta ancora un po\'', 'info');
@@ -125,8 +136,8 @@ export default function Playlists() {
       // PC spento: ultima lista generata dal PC, poi approssimazione locale
       // da libreria/like cachate + ricerca diretta.
       const s = useApp.getState();
-      const tracks = cachedAuto<TrackRef[]>(`pl:${id}`)
-        ?? await offlineAutoplaylist(id, s.library, s.remoteLikeList).catch(() => []);
+      const tracks = (regen ? undefined : cachedAuto<TrackRef[]>(`pl:${id}`))
+        ?? await offlineAutoplaylist(id, s.library, s.remoteLikeList, prev).catch(() => []);
       if (tracks?.length) {
         setAuto({ id, name, desc, tracks });
         toast(`${pcGone()} — lista approssimata dai dati locali`, 'info');
@@ -274,7 +285,7 @@ export default function Playlists() {
                       className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white flex items-center gap-1.5 font-medium hover:bg-accent/85">
                       <Play size={13} fill="currentColor" /> Riproduci
                     </button>
-                    <button onClick={() => void openAuto(auto.id, auto.name, auto.desc)} disabled={autoLoading}
+                    <button onClick={() => void openAuto(auto.id, auto.name, auto.desc, true)} disabled={autoLoading}
                       className="text-xs px-3 py-1.5 rounded-lg bg-panel2 hover:bg-line text-dim hover:text-txt flex items-center gap-1">
                       <RefreshCw size={12} className={autoLoading ? 'animate-spin' : ''} /> Rigenera
                     </button>

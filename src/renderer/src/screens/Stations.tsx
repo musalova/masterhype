@@ -89,13 +89,16 @@ function StationDetail({ sel }: { sel: StationSel }) {
   const meta = useMemo(() => selMeta(sel), [sel]);
   const key = selKey(sel);
 
-  const load = async () => {
+  const load = async (regen = false) => {
     setLoading(true);
     const ck = sel.kind === 'station' ? `st:${sel.id}` : `radio:${sel.radioKind}:${sel.value}`;
+    // "Rigenera" manda la scaletta corrente: il PC (o il motore locale) la
+    // esclude dal pool — scaletta davvero nuova, non la stessa rimescolata.
+    const prev = regen ? tracks : undefined;
     try {
       const t = sel.kind === 'station'
-        ? await api().rec.station(sel.id)
-        : await api().rec.radio(sel.radioKind, sel.value);
+        ? await api().rec.station(sel.id, prev)
+        : await api().rec.radio(sel.radioKind, sel.value, prev);
       setTracks(t);
       if (t.length) cacheAuto(ck, t);
       else toast('Stazione vuota, riprova tra poco', 'info');
@@ -103,10 +106,10 @@ function StationDetail({ sel }: { sel: StationSel }) {
       // PC spento: ultima scaletta generata, poi approssimazione locale
       // (query della stazione / like+libreria cachate / ricerca diretta).
       const s = useApp.getState();
-      const t = cachedAuto<TrackRef[]>(ck)
+      const t = (regen ? undefined : cachedAuto<TrackRef[]>(ck))
         ?? await (sel.kind === 'station'
-          ? offlineStation(sel.id, s.library, s.remoteLikeList)
-          : offlineRadio(sel.radioKind, sel.value, s.library)).catch(() => []);
+          ? offlineStation(sel.id, s.library, s.remoteLikeList, prev)
+          : offlineRadio(sel.radioKind, sel.value, s.library, prev)).catch(() => []);
       setTracks(t ?? []);
       if (!t?.length) toast(`Stazione non disponibile — ${pcGone()} e nessuna traccia trovata`, 'info');
     } finally {
@@ -149,7 +152,7 @@ function StationDetail({ sel }: { sel: StationSel }) {
               flex items-center gap-2 hover:bg-black/50 transition-colors disabled:opacity-50">
             <Shuffle size={15} /> Mescola
           </button>
-          <button onClick={() => void load()} disabled={loading}
+          <button onClick={() => void load(true)} disabled={loading}
             className="px-4 py-2.5 rounded-full bg-black/35 backdrop-blur text-white text-sm font-medium
               flex items-center gap-2 hover:bg-black/50 transition-colors disabled:opacity-50"
             title="Genera una scaletta nuova">

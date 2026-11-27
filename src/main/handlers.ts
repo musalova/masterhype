@@ -185,13 +185,16 @@ export const handlers: Record<string, Handler> = {
   // `u` è l'identità del chiamante: 'users:current' restituisce proprio quella
   // (su desktop è il profilo in settings, su remoto quello dell'header).
   [IPC.usersList]: () => users.listUsers(),
-  [IPC.usersCreate]: (u: number, name: string) => users.createUser(name),
-  [IPC.usersRename]: (u: number, id: number, name: string) => users.renameUser(id, name),
+  // Le mutazioni dei profili fanno broadcast: l'altro dispositivo aggiorna la
+  // lista utenti (sidebar/foglio profili) senza aspettare un reload.
+  [IPC.usersCreate]: (u: number, name: string) => { const r = users.createUser(name); notify(IPC.libraryChanged, null); return r; },
+  [IPC.usersRename]: (u: number, id: number, name: string) => { const r = users.renameUser(id, name); notify(IPC.libraryChanged, null); return r; },
   [IPC.usersRemove]: (u: number, id: number) => {
     if (id === u) throw new Error('Non puoi eliminare il profilo che stai usando');
     users.deleteUser(id);
     // Se era il profilo attivo del PC, ripiega sul primo rimasto
     if (getSettings().currentUser === id) setSettings({ currentUser: desktopUser() });
+    notify(IPC.libraryChanged, null);
   },
   [IPC.usersCurrent]: (u: number) => u,
   // NOTA: users:setCurrent NON è qui — è desktop-only (cambia il profilo del PC,
@@ -282,25 +285,34 @@ export const handlers: Record<string, Handler> = {
     library.recordRemoteEvent(e, u),
 
   [IPC.playlistList]: (u: number) => library.listPlaylists(u),
-  [IPC.playlistCreate]: (u: number, name: string, kind: Playlist['kind']) => library.createPlaylist(name, kind, u),
-  [IPC.playlistDelete]: (u: number, id: number) => library.deletePlaylist(id, u),
-  [IPC.playlistRename]: (u: number, id: number, name: string) => library.renamePlaylist(id, name, u),
-  [IPC.playlistAdd]: (u: number, plId: number, trackId: number) => library.addToPlaylist(plId, trackId, u),
-  [IPC.playlistRemove]: (u: number, plId: number, trackId: number) => library.removeFromPlaylist(plId, trackId, u),
-  [IPC.playlistMove]: (u: number, plId: number, trackId: number, dir: -1 | 1) => library.moveInPlaylist(plId, trackId, dir, u),
-  [IPC.playlistReorder]: (u: number, plId: number, ids: number[]) =>
-    Array.isArray(ids) ? library.reorderPlaylist(plId, ids.map(Number).filter((n) => n > 0), u) : undefined,
+  // Anche le mutazioni playlist fanno broadcast: una modifica fatta dal
+  // telefono appare subito nella schermata Playlist del PC (e viceversa) —
+  // prima la lista restava stale fino al reload manuale.
+  [IPC.playlistCreate]: (u: number, name: string, kind: Playlist['kind']) => { const r = library.createPlaylist(name, kind, u); notify(IPC.libraryChanged, null); return r; },
+  [IPC.playlistDelete]: (u: number, id: number) => { library.deletePlaylist(id, u); notify(IPC.libraryChanged, null); },
+  [IPC.playlistRename]: (u: number, id: number, name: string) => { library.renamePlaylist(id, name, u); notify(IPC.libraryChanged, null); },
+  [IPC.playlistAdd]: (u: number, plId: number, trackId: number) => { library.addToPlaylist(plId, trackId, u); notify(IPC.libraryChanged, null); },
+  [IPC.playlistRemove]: (u: number, plId: number, trackId: number) => { library.removeFromPlaylist(plId, trackId, u); notify(IPC.libraryChanged, null); },
+  [IPC.playlistMove]: (u: number, plId: number, trackId: number, dir: -1 | 1) => { library.moveInPlaylist(plId, trackId, dir, u); notify(IPC.libraryChanged, null); },
+  [IPC.playlistReorder]: (u: number, plId: number, ids: number[]) => {
+    if (!Array.isArray(ids)) return undefined;
+    const r = library.reorderPlaylist(plId, ids.map(Number).filter((n) => n > 0), u);
+    notify(IPC.libraryChanged, null);
+    return r;
+  },
   [IPC.playlistExport]: (u: number, id: number) => exportM3uHeadless(u, id),
-  [IPC.playlistAddRef]: (u: number, plId: number, t: TrackRef) => addRefToPlaylist(u, plId, t),
+  [IPC.playlistAddRef]: (u: number, plId: number, t: TrackRef) => { const r = addRefToPlaylist(u, plId, t); notify(IPC.libraryChanged, null); return r; },
 
   [IPC.recommend]: (u: number) => suggest(u),
   [IPC.assistant]: (u: number, req: AssistantRequest) => assistant(u, req),
-  [IPC.station]: (u: number, id: string) => stationTracks(u, id),
+  // `prev` = scaletta già mostrata (Rigenera): il motore la esclude dal pool
+  // così la nuova generazione porta brani freschi, non lo stesso set.
+  [IPC.station]: (u: number, id: string, prev?: TrackRef[]) => stationTracks(u, id, prev),
   [IPC.stationNext]: (u: number, videoId: string, artist: string, ctx?: string) =>
     stationContinue(u, String(videoId ?? ''), String(artist ?? ''), typeof ctx === 'string' ? ctx : undefined),
-  [IPC.radio]: (u: number, kind: 'artist' | 'genre', value: string) =>
-    kind === 'artist' ? radioForArtist(u, value) : radioForGenre(u, value),
-  [IPC.autoplaylist]: (u: number, id: string) => autoPlaylist(u, id),
+  [IPC.radio]: (u: number, kind: 'artist' | 'genre', value: string, prev?: TrackRef[]) =>
+    kind === 'artist' ? radioForArtist(u, value, prev) : radioForGenre(u, value, prev),
+  [IPC.autoplaylist]: (u: number, id: string, prev?: TrackRef[]) => autoPlaylist(u, id, prev),
   [IPC.libraryTaste]: (u: number, kind?: string) => library.tasteProfile(u, kind),
   [IPC.libraryTasteReset]: (u: number) => library.resetTaste(u),
   // Motore gusti v2: completamento ascolto, onboarding, uso funzioni

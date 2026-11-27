@@ -465,13 +465,20 @@ export async function spotifyImportTopArtists(): Promise<string[]> {
 const ITG_BLOCK_KEY = 'sys:itunes-blocked';
 const ITG_BLOCK_MS = 10 * 60_000;
 const itgMem = new Map<string, string | null>(); // normArtista → genere (anche negativi, solo sessione)
-let itgQ: Promise<unknown> = Promise.resolve();  // coda seriale: gentilezza verso la Search API
+let itgActive = 0;                               // pool da 3: seriale puro metteva 30+s sulle stazioni
+const itgWaiters: (() => void)[] = [];           // il breaker 4xx resta il guardiano del rate-limit
 let itgBlockedUntil = -1;                        // -1 = non ancora letto da prefs
 
-const itgSerialize = <T>(fn: () => Promise<T>): Promise<T> => {
-  const r = itgQ.then(fn);
-  itgQ = r.then(() => undefined, () => undefined);
-  return r;
+const itgAcquire = async (): Promise<void> => {
+  if (itgActive < 3) { itgActive++; return; }
+  await new Promise<void>((r) => itgWaiters.push(r));
+  itgActive++;
+};
+const itgRelease = (): void => { itgActive--; itgWaiters.shift()?.(); };
+
+const itgSerialize = async <T>(fn: () => Promise<T>): Promise<T> => {
+  await itgAcquire();
+  try { return await fn(); } finally { itgRelease(); }
 };
 
 const itgIsBlocked = (): boolean => {

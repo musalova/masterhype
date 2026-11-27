@@ -6,7 +6,7 @@
 import type { LibraryTrack, TrackRef } from '../../shared/types';
 import { api, mediaUrl, isRemote } from './api';
 import { phoneAudioUrlFor } from './phoneLocal';
-import { isOnline, retryNow } from './remote';
+import { isOnline, retryNow, remoteViaTailscale } from './remote';
 
 export const srcOf = async (t: TrackRef & { local?: boolean }, skipPc = false): Promise<{ url: string; videoId: string; healed: boolean; local?: boolean }> => {
   const lib = t as LibraryTrack;
@@ -41,6 +41,14 @@ export const srcOf = async (t: TrackRef & { local?: boolean }, skipPc = false): 
       const { directPlayStream } = await import('./direct');
       return directPlayStream(t.videoId, t.artist, t.title);
     } finally { clearTimeout(tmr); }
+  }
+  // Stream via Tailscale/4G: l'URL googlevideo che il PC risolve è IP-locked
+  // alla WAN del PC — il telefono esce col proprio IP pubblico → 403 secco al
+  // play (e a cascata skip su tutta la coda). Su LAN condividono l'IP pubblico
+  // e funziona; via tunnel risolve diretto (YouTube vede l'IP del telefono).
+  if (isRemote() && remoteViaTailscale()) {
+    const { directPlayStream } = await import('./direct');
+    return directPlayStream(t.videoId, t.artist, t.title);
   }
   // Stream: col PC up passa dal server (auto-riparazione), col PC giù
   // il client remoto risolve YouTube da solo (modalità autonoma).

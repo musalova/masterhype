@@ -251,13 +251,13 @@ export const remoteApi: MasterHypeApi = {
   rec: {
     suggest: () => call(IPC.recommend),
     assistant: (r) => call(IPC.assistant, r),
-    station: (id) => call(IPC.station, id),
-    radio: (k, v) => call(IPC.radio, k, v),
+    station: (id, prev) => call(IPC.station, id, prev?.map(stripRef)),
+    radio: (k, v, prev) => call(IPC.radio, k, v, prev?.map(stripRef)),
     // Continuazione radio taste-aware: col PC vivo la calcola il motore;
     // a PC spento il telefono replica il filtro gusti sui dati locali.
     next: (v, a, ctx) => ytCall(() => call(IPC.stationNext, v, a, ctx),
       async () => (await import('./offlineRec')).offlineContinue(v, a, ctx)),
-    autoplaylist: (id) => call(IPC.autoplaylist, id),
+    autoplaylist: (id, prev) => call(IPC.autoplaylist, id, prev?.map(stripRef)),
     onboard: () => cached(`mh-onboard-cache`, () => call(IPC.recOnboard)),
     trends: () => call(IPC.trends),
     trendsRefresh: () => call(IPC.trendsRefresh),

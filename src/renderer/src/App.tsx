@@ -151,6 +151,8 @@ export default function App() {
     void api().downloads.list().then((d) => useApp.setState({ downloads: d })).catch(() => {});
     const off = api().downloads.onEvent(async (j) => {
       useApp.setState((s) => {
+        // Tombstone: job eliminato (dismiss/clear su qualsiasi device) → via dalla lista
+        if (j.removed) return { downloads: s.downloads.filter((x) => x.id !== j.id) };
         const idx = s.downloads.findIndex((x) => x.id === j.id);
         if (idx < 0) return { downloads: [...s.downloads, j] };
         const d = [...s.downloads];
@@ -182,6 +184,9 @@ export default function App() {
       libT = setTimeout(() => {
         void useApp.getState().loadLibrary();
         void useApp.getState().loadRemoteLikes();
+        // Anche profili/playlist viaggiano su lib:changed: la sidebar e la
+        // schermata Playlist riflettono subito le mutazioni dell'altro device.
+        void useApp.getState().loadUsers();
       }, 600);
     });
     // Impostazioni cambiate sull'altro lato (desktop, altro telefono, o eco

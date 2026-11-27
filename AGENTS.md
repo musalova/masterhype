@@ -307,6 +307,18 @@
 - CD condiviso: `mh-pref-cdqueue` = array di track id ricostruito in `loadLibrary`;
   `downloadToCd` accoda il download sul PC e `pendingCd` aggiunge la traccia al 'done'
   (drainato anche al reconnect)
+- Broadcast su mutazione: `lib:changed` è emesso da QUALUNQUE handler che muta
+  libreria/like/playlist/profili (handlers.ts — nuove mutazioni devono notificarlo;
+  il client debounca 600ms e ricarica libreria+like+profili). `dl:event` porta
+  anche tombstone `{...job, removed:true}` da dismissJob/clearFinished — il
+  client filtra per id, mai upsert di un job eliminato.
+- `rec.station|radio|autoplaylist` accettano `prev?: TrackRef[]` (scaletta già
+  mostrata → "Rigenera"): il motore esclude i brani visti dal pool candidati
+  (match videoId + baseKey) con riammissione se il pool scende sotto il minimo.
+  Il telefono manda `prev` anche a PC spento (dropPrev in offlineRec).
+- Stream IP-locked: l'URL googlevideo risolto dal PC vale solo per la WAN del
+  PC — via Tailscale/4G (`remoteViaTailscale()`) il device risolve lo stream da
+  solo (playerSrc). Il relay `/media/gs` per l'EQ fetcha lato PC = immune.
 - `media://audio|cover/:id` vale solo in Electron → remoto usa URL media del PC.
   **Proxy SW `/__pc/*`** (`public/sw.js`): se il service worker controlla la
   pagina (APK/PWA — `swControlled()`), mediaUrl/rewriteMedia/EventSource
@@ -817,17 +829,50 @@
   artisti del profilo coerenti col tema entrano in scaletta. **Fedeltà genere**
   (bug "preferiti d'altro genere nella stazione jazz"): il tilt sulle stazioni
   con `def.genre` richiede ≥2 tag collimanti (`wantHits`, match normalizzato +
-  substring "italian trap"↔"trap" — i tag Last.fm non sono uniformi), e un gate
-  finale scarta i candidati le cui tag Last.fm non confermano il tema (fonti
-  `tag`/`tagtracks` esenti per costruzione; tagless artisti passano via query).
+  substring "italian trap"↔"trap" — i tag Last.fm non sono uniformi), e il gate
+  condiviso `genreGate` (recommend.ts — USATO da stationQuery E finalizeRadio
+  per le radio di genere) filtra TUTTE le fonti, `tag`/`tagtracks` compresi:
+  il catalogo Deezer per-genere è un ombrello ('electro' copre techno/dnb,
+  'rock' in Italia include il rap dei chart locali — verificato dal vivo:
+  Tinashe/Charli/Sfera leakavano via seed Deezer). Regole del gate di genere:
+  **primario iTunes = verdetto autorevole** con match STRICT (`wantHitsStrict`
+  — 'pop' primario non copre 'italian pop'); primario fuori tema = veto
+  irrevocabile (`hardOut`, non rientra nemmeno col pool tirato); senza
+  primario serve prova specifica (tag NON-ombrello, `UMBRELLA_TAGS`) o nuvola
+  concorde ≥2 prove; `mbSecondChance` salva i drop-bound via MusicBrainz
+  (Vasco iTunes='Rock' → MB 'italian'). Post-score c'è il **veto di confine**:
+  i candidati in zona-scaletta ancora senza classificazione pagano un lookup
+  primario a budget ~8s (i correlati di coda con primario pop non entrano).
   `stationContinue` usa lo stesso `wantHits` per l'ancora — il match esatto
   lasciava derivare le radio di genere a ogni continuazione. Le stazioni con
   `StationDef.genre` (gruppi `genere`/`sottogenere` — trap, grunge, bossa nova,
   jazz…) seminano il pool da `lastfmTagTopArtists`/`lastfmTagTopTracks` del tag
-  + top Deezer dei migliori (fonti `tag`/`tagtracks`, bonus in scoring): la sola
-  query YT "<genere> hits" restituiva hit fuori tema. Offline `offlineStation`
+  + top Deezer dei migliori + query doppia "<g> hits" + "<g> music": la sola
+  query YT "<genere> hits" restituiva hit fuori tema. **Rigenera (`prev`)**:
+  i `prev` viaggiano da UI → IPC/remote → motore; `applyPrevCands` marca i
+  visti `c.seen` e li confina in coda (`freshFirst`) — MAI riammetterli a
+  pieno score né dropparli tutti: la soglia di riammissione segue il TARGET
+  di output (stazioni 18-20, radio 26), sotto soglia restano come riempitivo.
+  Pool tirato → refill da correlati dei sopravvissuti al gate (upNext top
+  risolti + `deezerRelatedArtists` → top) in stazioni E radio di genere.
+  Offline `offlineStation`
   usa `genrePool` (propri brani del genere + upNext + query curata) — semi
   upNext = brani/risultati DEL genere, mai like generici.
+- **Timeout/latenza motore**: le API esterne hanno SEMPRE un budget — `j()`
+  Deezer/Last.fm 12s, iTunes 10s via `itunesArtistGenre` (pool `itgSerialize`
+  a 3 in volo — la coda seriale pura metteva 30+s sulle stazioni; il breaker
+  persistente 4xx/10min copre il rate-limit), MusicBrainz 10s con pacing 1.1s,
+  **fetch Innertube 15s** (custom `fetch` in `Innertube.create` — una search
+  throttled pendeva minuti), `resolveVideoIds` ha `budgetMs` per-callsite +
+  timeout 18s per-item. Regola: MAI una fetch senza `AbortSignal.timeout` nel
+  motore, e ogni fan-out (lookup tag/prim/related/resolve) con cap numerico +
+  deadline — un singolo stallo non deve sforare il timeout del client (45s
+  rec:* sul telefono). **REGEX nel parsing = MAI quantificatori annidati**:
+  `(?:[\w.]+[\s,/]*)+` in `cleanTitle` era backtracking catastrofico — un
+  titolo YT con coda lunga/unicode congelava il MAIN in sync per minuti
+  (ricerche e stazioni appese senza nessun errore, il bug "radio che non
+  risponde"). Testare regex su titoli lunghi/unicode prima di metterle nel
+  pipeline di parsing.
 - **Nomi artista: MAI `norm()` come argomento delle API esterne**: `normText`
   ("AC/DC"→"acdc", "P!nk"→"pnk", "blink-182"→"blink182") serve SOLO a chiavi
   e confronti interni (pesi, dedup, blocchi) — passata a `lastfmArtistTags`/
